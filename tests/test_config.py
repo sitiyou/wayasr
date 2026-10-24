@@ -59,7 +59,7 @@ def test_saved_server_defaults_and_explicit_override(monkeypatch):
 def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     models = tmp_path / "model directory"
-    answers = ["llama-server", str(models), "none", "n", "0.0.0.0", "9000", "", "Chinese", "@DEFAULT_SOURCE@", "y"]
+    answers = ["llama-server", str(models), "none", "n", "0.0.0.0", "9000", "", "Chinese", "@DEFAULT_SOURCE@", "y", "y"]
     runner = CliRunner()
     result = runner.invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
@@ -70,6 +70,7 @@ def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     assert saved["server"]["server_bin"] == "llama-server"
     assert saved["client"]["language"] == "Chinese"
     assert saved["live"]["source"] == "@DEFAULT_SOURCE@"
+    assert saved["live"]["overlay"] is True
     assert not (config.config_home() / "systemd/user/wayasr.service").exists()
     shown = runner.invoke(cli.main, ["config", "show"])
     assert shown.exit_code == 0
@@ -88,17 +89,17 @@ def test_init_abort_keeps_previous_config():
 def test_reinitialization_preserves_remote_url_and_can_cancel():
     config.save_config({"url": "https://remote.example.test:9000"})
     runner = CliRunner()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\n" + "\n" * 10)
+    result = runner.invoke(cli.main, ["config", "init"], input="y\n" + "\n" * 11)
     assert result.exit_code == 0, result.output
     assert config.load_config()["url"] == "https://remote.example.test:9000"
     before = config.config_path().read_bytes()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\n" + "\n" * 9 + "n\n")
+    result = runner.invoke(cli.main, ["config", "init"], input="y\n" + "\n" * 10 + "n\n")
     assert result.exit_code != 0
     assert config.config_path().read_bytes() == before
 
 
 def test_init_cancel_does_not_save():
-    result = CliRunner().invoke(cli.main, ["config", "init"], input="\n" * 9 + "n\n")
+    result = CliRunner().invoke(cli.main, ["config", "init"], input="\n" * 10 + "n\n")
     assert result.exit_code != 0
     assert not config.config_path().exists()
 

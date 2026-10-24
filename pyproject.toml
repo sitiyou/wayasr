@@ -20,6 +20,9 @@ Issues = "https://github.com/sitiyou/wayasr/issues"
 
 [project.optional-dependencies]
 live = ["numpy>=1.24", "torch>=2.0", "torchaudio>=2.0", "silero-vad>=6.2", "onnxruntime>=1.16", "rich>=13"]
+wayland = [
+    "asslayer>=0.1.0,<0.2.0 ; python_full_version >= '3.14' and sys_platform == 'linux'",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "rich>=13"]

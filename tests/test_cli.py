@@ -89,7 +89,7 @@ from wayasr.cli import main
 result = CliRunner().invoke(main, ['live', '--help'])
 assert result.exit_code == 0
 assert '--plain' in result.output
-assert not any(name in sys.modules for name in ('torch', 'numpy', 'silero_vad', 'rich'))
+assert not any(name in sys.modules for name in ('torch', 'numpy', 'silero_vad', 'rich', 'asslayer'))
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

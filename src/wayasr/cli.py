@@ -140,6 +140,9 @@ def transcribe(audio, url, language, timeout):
 @client_options
 @click.option("--source", default="@DEFAULT_MONITOR@", show_default=True)
 @click.option("--plain", is_flag=True, help="Disable the Rich live display.")
+@click.option("--overlay/--no-overlay", default=False, help="Show Wayland desktop captions with asslayer (Python 3.14+).")
+@click.option("--overlay-font-size", type=click.IntRange(12, 120), default=42, show_default=True)
+@click.option("--overlay-duration", type=click.IntRange(1, 60), default=8, show_default=True, help="Seconds before an unchanged desktop caption expires.")
 @click.option("--partial-interval", type=click.FloatRange(min=0), default=1.0, show_default=True)
 @click.option("--max-segment", type=click.FloatRange(1, 25), default=15.0, show_default=True)
 @command_errors
@@ -181,6 +184,7 @@ def init_config(ctx):
     language = click.prompt("Language (auto detects it)", default=config.get("client", {}).get("language") or "auto")
     config.setdefault("client", {})["language"] = None if language == "auto" else language
     config.setdefault("live", {})["source"] = click.prompt("Live audio source", default=config.get("live", {}).get("source", "@DEFAULT_MONITOR@"))
+    config["live"]["overlay"] = click.confirm("Enable Wayland desktop captions (Linux, Python 3.14+)?", default=config["live"].get("overlay", False))
     click.echo(f"Save to {path}")
     click.echo(f"Service URL: {config['url']}")
     if not click.confirm("Save configuration?", default=True):

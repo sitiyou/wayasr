@@ -70,8 +70,9 @@ class AudioSegmenter:
 
 
 class SubtitleOutput:
-    def __init__(self, view=None):
+    def __init__(self, view=None, overlay=None):
         self.view = view
+        self.views = tuple(sink for sink in (view, overlay) if sink is not None)
         self.previous = ""
         self.pending = ""
         self.last_final = ""
@@ -94,9 +95,9 @@ class SubtitleOutput:
                     break
                 stable += 1
             self.previous = text
-            if self.view:
-                self.view.partial(self.pending + text[:stable], text[stable:])
-            else:
+            for view in self.views:
+                view.partial(self.pending + text[:stable], text[stable:])
+            if not self.view:
                 sys.stdout.write("\r\033[K" + self.pending + text[:stable]
                                  + "\033[2m" + text[stable:] + "\033[0m")
         else:
@@ -114,17 +115,18 @@ class SubtitleOutput:
             self.pending = combined[start:].lstrip()
             if end:
                 self.flush()
-            elif self.view:
-                self.view.partial(self.pending)
             else:
-                sys.stdout.write(self.pending)
+                for view in self.views:
+                    view.partial(self.pending)
+                if not self.view:
+                    sys.stdout.write(self.pending)
         if not self.view:
             sys.stdout.flush()
 
     def sentence(self, text):
-        if self.view:
-            self.view.sentence(text)
-        else:
+        for view in self.views:
+            view.sentence(text)
+        if not self.view:
             sys.stdout.write(text + "\n")
 
     def flush(self):
@@ -133,14 +135,14 @@ class SubtitleOutput:
                 sys.stdout.write("\r\033[K")
             self.sentence(self.pending)
             self.pending = ""
-        if self.view:
-            self.view.partial("")
-        else:
+        for view in self.views:
+            view.partial("")
+        if not self.view:
             sys.stdout.flush()
 
 
 class TranscriptionWorker:
-    def __init__(self, client, max_pending=16, view=None):
+    def __init__(self, client, max_pending=16, view=None, overlay=None):
         self.client = client
         self.finals = queue.Queue(maxsize=max_pending)
         self.partial = None
@@ -149,7 +151,7 @@ class TranscriptionWorker:
         self.segment = 0
         self.finalized_segment = -1
         self.view = view
-        self.output = SubtitleOutput(view)
+        self.output = SubtitleOutput(view, overlay)
         self.thread = threading.Thread(target=self.run, name="asr-inference")
         self.thread.start()
 
@@ -222,6 +224,16 @@ def run(args):
     if not shutil.which("parec"):
         raise ValueError("live capture requires parec (Linux PulseAudio or PipeWire-Pulse)")
 
+    if args.overlay:
+        from .overlay import WaylandOverlay
+
+        with WaylandOverlay(args.overlay_font_size, args.overlay_duration) as overlay:
+            capture(args, overlay)
+    else:
+        capture(args)
+
+
+def capture(args, overlay=None):
     import numpy as np
     import torch
     from silero_vad import load_silero_vad
@@ -244,7 +256,7 @@ def run(args):
     except BaseException:
         client.close()
         raise
-    worker = TranscriptionWorker(client, view=view)
+    worker = TranscriptionWorker(client, view=view, overlay=overlay)
     segmenter = AudioSegmenter(int(args.max_segment * 16000 / 512))
     segment = 0
     last_partial = time.monotonic()

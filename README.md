@@ -152,6 +152,32 @@ wayasr live --max-segment 10
 
 输出重定向时自动禁用 TUI；文本模式保留原有终端行更新控制序列，并非 SRT/JSON 导出。macOS、Windows 可以使用文件转写或连接远程服务，但尚无内置实时采集适配。
 
+### Wayland 桌面字幕
+
+需要 Linux、Python 3.14+、支持 `wlr-layer-shell` 的 Wayland 合成器，以及可用的 Vulkan 驱动。此功能通过 PyPI 的 `asslayer` 提供，不依赖本地源码路径；仅安装基础 CLI 或 `[live]` 时不会引入它。
+
+从项目目录安装桌面显示依赖：
+
+```sh
+uv tool install --force --python 3.14 --torch-backend cpu '.[live,wayland]'
+```
+
+在已登录的 Wayland 图形会话中运行：
+
+```sh
+wayasr live --overlay --language Chinese
+wayasr live --overlay --plain --source @DEFAULT_SOURCE@ --language Chinese
+wayasr live --overlay --overlay-font-size 48 --overlay-duration 10
+```
+
+字幕显示在屏幕底部中央，文本区域约为屏幕宽度的 50%，生成 ASS 时主动插入强制换行，不依赖引擎自动断行。默认字号下每行最多 22 个非组合字符，字号增大时字符上限相应减少；稳定文本和待确认文本共用同一行的计数。稳定文本为白色，待确认文本为灰色；下一条识别结果替换当前字幕。最后一句默认保留 8 秒，无更新后消失。`--overlay-font-size` 设置 ASS 字号（12–120），`--overlay-duration` 设置无更新时的保留秒数（1–60）。识别文本中的反斜杠和花括号显示为全角字符，避免被解释为 ASS 控制指令。
+
+桌面字幕与终端输出同时保留；`--plain` 只禁用 Rich TUI，不禁用桌面字幕。Ctrl+C 结束采集、处理待完成转写，并关闭叠加层。该基础集成不提供托盘、菜单或拖拽操作，默认鼠标穿透；合成器规则可按 layer-shell namespace `wayasr` 匹配，与 layrics 的显示层独立。
+
+`config init` 可以保存是否启用桌面字幕；`--no-overlay` 临时覆盖已保存的启用状态。也可以在配置文件的 `live` 对象中设置 `overlay`、`overlay_font_size` 和 `overlay_duration`。桌面显示并未扩展采集平台范围，音频仍通过 PulseAudio/PipeWire-Pulse 的 `parec` 获取。
+
+如果没有显示，请确认服务已就绪、音源有声音、`WAYLAND_DISPLAY` 有效、合成器支持 layer-shell，以及 Vulkan 驱动可用；查看终端中的 asslayer 日志。
+
 ### 分段与识别限制
 
 - 连续约 480 ms 静音结束一段；默认最多缓存约 15 秒。
@@ -168,7 +194,7 @@ wayasr config init
 wayasr config show
 ```
 
-`config init` 交互式询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址、端口、客户端 URL、识别语言和采集源，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
+`config init` 交互式询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址、端口、客户端 URL、识别语言、采集源和是否启用 Wayland 桌面字幕，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
 
 目录由 `platformdirs` 按当前平台管理。Linux 默认使用：
 

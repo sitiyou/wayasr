@@ -14,6 +14,8 @@ uv sync --locked --extra live
 uv run --locked --extra live wayasr live
 ```
 
+For Wayland integration, use Linux and Python 3.14+ with `uv sync --locked --extra live --extra wayland`. The `wayland` extra installs asslayer from PyPI. Overlay unit tests replace the controller with a mock and never create a real surface. Run graphical verification manually in a supported Wayland session using `uv run --locked --extra live --extra wayland wayasr live --overlay`; expect bottom-centered captions and a clean shutdown on Ctrl+C.
+
 The project selects CPU PyTorch wheels on Linux and Windows. The ASR server has its own independent GPU backend. Add runtime dependencies with `uv add`, and development dependencies with `uv add --dev`.
 
 Build distributions with:
