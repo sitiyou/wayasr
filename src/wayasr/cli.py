@@ -167,19 +167,22 @@ def init_config(ctx):
     path = config_path()
     if path.exists():
         click.confirm(f"Update configuration at {path}?", default=True, abort=True)
-    with serve_command.make_context("serve", [], parent=ctx.find_root()) as server_ctx:
-        options = server_ctx.params.copy()
-    previous_url = server_config(SimpleNamespace(**options))["url"]
-    saved_url = config.get("url")
-    options["server_bin"] = click.prompt("llama-server executable", default=options["server_bin"])
-    options["model_dir"] = Path(click.prompt("Model directory", default=str(options["model_dir"])))
-    device = click.prompt("Device (auto lets llama.cpp choose)", default=options["device"] or "auto")
-    options["device"] = None if device == "auto" else device
-    options["clear_device_visibility"] = click.confirm("Clear GPU visibility filters for the server?", default=options["clear_device_visibility"])
-    options["host"] = click.prompt("Listen address", default=options["host"])
-    options["port"] = click.prompt("Port", default=options["port"], type=click.IntRange(1, 65535))
-    config.update(server_config(SimpleNamespace(**options), shutil.which(options["server_bin"])))
-    url_default = saved_url if saved_url and saved_url != previous_url else config["url"]
+    local_server = click.confirm("Configure a local llama.cpp server?", default="server" in config or "url" not in config)
+    url_default = config.get("url", "http://127.0.0.1:8087")
+    if local_server:
+        with serve_command.make_context("serve", [], parent=ctx.find_root()) as server_ctx:
+            options = server_ctx.params.copy()
+        previous_url = server_config(SimpleNamespace(**options))["url"]
+        saved_url = config.get("url")
+        options["server_bin"] = click.prompt("llama-server executable", default=options["server_bin"])
+        options["model_dir"] = Path(click.prompt("Model directory", default=str(options["model_dir"])))
+        device = click.prompt("Device (auto lets llama.cpp choose)", default=options["device"] or "auto")
+        options["device"] = None if device == "auto" else device
+        options["clear_device_visibility"] = click.confirm("Clear GPU visibility filters for the server?", default=options["clear_device_visibility"])
+        options["host"] = click.prompt("Listen address", default=options["host"])
+        options["port"] = click.prompt("Port", default=options["port"], type=click.IntRange(1, 65535))
+        config.update(server_config(SimpleNamespace(**options), shutil.which(options["server_bin"])))
+        url_default = saved_url if saved_url and saved_url != previous_url else config["url"]
     config["url"] = click.prompt("Client service URL", default=url_default)
     language = click.prompt("Language (auto detects it)", default=config.get("client", {}).get("language") or "auto")
     config.setdefault("client", {})["language"] = None if language == "auto" else language
@@ -190,7 +193,10 @@ def init_config(ctx):
     if not click.confirm("Save configuration?", default=True):
         raise click.Abort()
     save_config(config)
-    click.echo("Saved. Run 'wayasr service install' to deploy the configured server.")
+    if local_server:
+        click.echo("Saved. Run 'wayasr service install' to deploy the configured server.")
+    else:
+        click.echo("Saved. Transcription commands will use the configured API.")
 
 
 @config_group.command("show")
