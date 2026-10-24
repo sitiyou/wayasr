@@ -15,11 +15,11 @@ def config_home():
 
 def config_path():
     config_home()
-    return user_config_path("pauscribe", appauthor=False).expanduser() / "config.json"
+    return user_config_path("wayasr", appauthor=False).expanduser() / "config.json"
 
 
 def default_model_dir():
-    return user_data_path("pauscribe", appauthor=False).expanduser() / "models"
+    return user_data_path("wayasr", appauthor=False).expanduser() / "models"
 
 
 def load_config():

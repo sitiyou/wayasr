@@ -20,7 +20,7 @@ MMPROJ_NAME = "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
 def server_options(command):
     options = [
         click.option("--server-bin", default="llama-server", show_default=True),
-        click.option("--model-dir", type=click.Path(path_type=Path), default=default_model_dir, envvar="PAUSCRIBE_MODEL_DIR", show_default="user data directory/models"),
+        click.option("--model-dir", type=click.Path(path_type=Path), default=default_model_dir, envvar="WAYASR_MODEL_DIR", show_default="user data directory/models"),
         click.option("--model", type=click.Path(path_type=Path), help="Override the ASR GGUF path."),
         click.option("--mmproj", type=click.Path(path_type=Path), help="Override the matching projector path."),
         click.option("--device", help="llama.cpp device: ROCm0, CUDA0, Vulkan0, or none for CPU."),
@@ -37,7 +37,7 @@ def server_options(command):
 
 def client_options(command):
     for option in reversed([
-        click.option("--url", default="http://127.0.0.1:8087", envvar="PAUSCRIBE_URL", show_default=True),
+        click.option("--url", default="http://127.0.0.1:8087", envvar="WAYASR_URL", show_default=True),
         click.option("--language", help="Omit to detect the language automatically."),
         click.option("--timeout", type=click.FloatRange(min=0, min_open=True), default=120, show_default=True),
     ]):
@@ -98,7 +98,7 @@ def serve(args):
 @click.pass_context
 @command_errors
 def main(ctx):
-    """Pause-aware local transcription with llama.cpp."""
+    """WayASR: pause-aware local transcription with llama.cpp."""
     config = load_config()
     client = config.get("client", {}).copy()
     if "url" in config:
@@ -186,7 +186,7 @@ def init_config(ctx):
     if not click.confirm("Save configuration?", default=True):
         raise click.Abort()
     save_config(config)
-    click.echo("Saved. Run 'pauscribe service install' to deploy the configured server.")
+    click.echo("Saved. Run 'wayasr service install' to deploy the configured server.")
 
 
 @config_group.command("show")

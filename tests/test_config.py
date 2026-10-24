@@ -4,12 +4,12 @@ from unittest.mock import Mock
 from click.testing import CliRunner
 import pytest
 
-from pauscribe import cli, config, live
+from wayasr import cli, config, live
 
 
 def test_platformdirs_paths_respect_xdg(tmp_path):
-    assert config.config_path() == tmp_path / "user-config/pauscribe/config.json"
-    assert config.default_model_dir() == tmp_path / "user-data/pauscribe/models"
+    assert config.config_path() == tmp_path / "user-config/wayasr/config.json"
+    assert config.default_model_dir() == tmp_path / "user-data/wayasr/models"
 
 
 def test_client_default_precedence(monkeypatch):
@@ -20,7 +20,7 @@ def test_client_default_precedence(monkeypatch):
     assert runner.invoke(cli.main, ["live"]).exit_code == 0
     assert captured[-1].url == "http://localhost:9000"
     assert captured[-1].language == "Chinese"
-    monkeypatch.setenv("PAUSCRIBE_URL", "http://localhost:9001")
+    monkeypatch.setenv("WAYASR_URL", "http://localhost:9001")
     assert runner.invoke(cli.main, ["live"]).exit_code == 0
     assert captured[-1].url == "http://localhost:9001"
     assert runner.invoke(cli.main, ["live", "--url", "http://localhost:9002"]).exit_code == 0
@@ -36,7 +36,7 @@ def test_client_default_precedence(monkeypatch):
     with wave.open(str(audio), "wb") as wav:
         wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
         wav.writeframes(b"\x00\x00" * 512)
-    monkeypatch.delenv("PAUSCRIBE_URL")
+    monkeypatch.delenv("WAYASR_URL")
     result = runner.invoke(cli.main, ["transcribe", str(audio)])
     assert result.exit_code == 0, result.output
     factory.assert_called_once_with("http://localhost:9000", "Chinese", 120)
@@ -70,7 +70,7 @@ def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     assert saved["server"]["server_bin"] == "llama-server"
     assert saved["client"]["language"] == "Chinese"
     assert saved["live"]["source"] == "@DEFAULT_SOURCE@"
-    assert not (config.config_home() / "systemd/user/pauscribe.service").exists()
+    assert not (config.config_home() / "systemd/user/wayasr.service").exists()
     shown = runner.invoke(cli.main, ["config", "show"])
     assert shown.exit_code == 0
     assert str(config.config_path()) in shown.output

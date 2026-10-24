@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 from click.testing import CliRunner
 
-from pauscribe import cli
+from wayasr import cli
 
 
 def server_args(tmp_path, monkeypatch, *options):
@@ -19,13 +19,13 @@ def server_args(tmp_path, monkeypatch, *options):
 
 
 def test_defaults_can_be_overridden(monkeypatch):
-    monkeypatch.setenv("PAUSCRIBE_URL", "http://example.test:9000")
-    monkeypatch.setenv("PAUSCRIBE_MODEL_DIR", "/tmp/asr-models")
+    monkeypatch.setenv("WAYASR_URL", "http://example.test:9000")
+    monkeypatch.setenv("WAYASR_MODEL_DIR", "/tmp/asr-models")
     captured = []
     monkeypatch.setattr(cli, "serve", lambda args: captured.append(args) or 0)
     assert CliRunner().invoke(cli.main, ["serve"]).exit_code == 0
     assert captured[0].model_dir == Path("/tmp/asr-models")
-    from pauscribe import live
+    from wayasr import live
 
     monkeypatch.setattr(live, "run", lambda args: captured.append(args))
     assert CliRunner().invoke(cli.main, ["live"]).exit_code == 0
@@ -85,7 +85,7 @@ def test_cli_help_does_not_import_live_dependencies():
     code = """
 import sys
 from click.testing import CliRunner
-from pauscribe.cli import main
+from wayasr.cli import main
 result = CliRunner().invoke(main, ['live', '--help'])
 assert result.exit_code == 0
 assert '--plain' in result.output

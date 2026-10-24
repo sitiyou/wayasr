@@ -7,7 +7,7 @@ from .cli import server_command
 from .config import config_home, save_server_config, write_text_atomic
 
 
-UNIT = "pauscribe.service"
+UNIT = "wayasr.service"
 
 
 def quote_argument(value):
@@ -21,7 +21,7 @@ def render_unit(args):
     command[0] = str(Path(command[0]).absolute())
     lines = [
         "[Unit]",
-        "Description=Pauscribe local transcription server",
+        "Description=WayASR local transcription server",
         "After=default.target",
         "",
         "[Service]",

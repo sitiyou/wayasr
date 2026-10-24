@@ -5,13 +5,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from pauscribe.client import LlamaASR
-from pauscribe.live import AudioSegmenter, SubtitleOutput, TranscriptionWorker
+from wayasr.client import LlamaASR
+from wayasr.live import AudioSegmenter, SubtitleOutput, TranscriptionWorker
 
 
 def test_tui_renders_literal_text_and_metrics():
     from rich.console import Console
-    from pauscribe.tui import ASRView
+    from wayasr.tui import ASRView
 
     stream = io.StringIO()
     console = Console(file=stream, width=100, height=30, color_system=None)
@@ -23,7 +23,7 @@ def test_tui_renders_literal_text_and_metrics():
     view.show_error("test error")
     console.print(view.render())
     rendered = stream.getvalue()
-    for expected in ("Qwen3 ASR", "[red]literal transcript[/red]", "稳定文本", "待确认文本",
+    for expected in ("WayASR", "[red]literal transcript[/red]", "稳定文本", "待确认文本",
                      "Speech", "2.5s", "Queued 2", "RTF 0.050", "test error"):
         assert expected in rendered
 

@@ -59,7 +59,7 @@ class ASRView:
             current.append(self.pending, style="dim")
             status = Text(f"{self.status} · {'Speech' if self.speech else 'Silence'} · Buffer {self.buffer_seconds:.1f}s · Queued {self.queue_size}", style="cyan")
             items = [
-                Panel(Group(status, Text(self.details, style="dim")), title="Qwen3 ASR", border_style="cyan"),
+                Panel(Group(status, Text(self.details, style="dim")), title="WayASR", border_style="cyan"),
                 Panel(history, title="Transcript", height=height + 2),
                 Panel(current, title="Live · dim text may change", height=4),
                 Text(self.timing, style="green"),

@@ -844,60 +844,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pauscribe"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "click" },
-    { name = "platformdirs", version = "4.12.4", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "platformdirs", version = "4.13.5", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "requests" },
-]
-
-[package.optional-dependencies]
-live = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "onnxruntime", version = "1.31.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "rich" },
-    { name = "silero-vad" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform == 'darwin'" },
-    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform == 'darwin'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "rich" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1" },
-    { name = "numpy", marker = "extra == 'live'", specifier = ">=1.24" },
-    { name = "onnxruntime", marker = "extra == 'live'", specifier = ">=1.16" },
-    { name = "platformdirs", specifier = ">=4.12.4" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "rich", marker = "extra == 'live'", specifier = ">=13" },
-    { name = "silero-vad", marker = "extra == 'live'", specifier = ">=6.2" },
-    { name = "torch", marker = "sys_platform == 'darwin' and extra == 'live'", specifier = ">=2.0" },
-    { name = "torch", marker = "sys_platform != 'darwin' and extra == 'live'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchaudio", marker = "sys_platform == 'darwin' and extra == 'live'", specifier = ">=2.0" },
-    { name = "torchaudio", marker = "sys_platform != 'darwin' and extra == 'live'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
-]
-provides-extras = ["live"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8" },
-    { name = "rich", specifier = ">=13" },
-]
-
-[[package]]
 name = "platformdirs"
 version = "4.12.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -1275,4 +1221,58 @@ source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
+]
+
+[[package]]
+name = "wayasr"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "click" },
+    { name = "platformdirs", version = "4.12.4", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "platformdirs", version = "4.13.5", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "requests" },
+]
+
+[package.optional-dependencies]
+live = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.31.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "rich" },
+    { name = "silero-vad" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "numpy", marker = "extra == 'live'", specifier = ">=1.24" },
+    { name = "onnxruntime", marker = "extra == 'live'", specifier = ">=1.16" },
+    { name = "platformdirs", specifier = ">=4.12.4" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "rich", marker = "extra == 'live'", specifier = ">=13" },
+    { name = "silero-vad", marker = "extra == 'live'", specifier = ">=6.2" },
+    { name = "torch", marker = "sys_platform == 'darwin' and extra == 'live'", specifier = ">=2.0" },
+    { name = "torch", marker = "sys_platform != 'darwin' and extra == 'live'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchaudio", marker = "sys_platform == 'darwin' and extra == 'live'", specifier = ">=2.0" },
+    { name = "torchaudio", marker = "sys_platform != 'darwin' and extra == 'live'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
+]
+provides-extras = ["live"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "rich", specifier = ">=13" },
 ]

@@ -11,7 +11,7 @@ The tests use mocked HTTP and inference clients; a GPU, model files, live audio 
 
 ```sh
 uv sync --locked --extra live
-uv run --locked --extra live pauscribe live
+uv run --locked --extra live wayasr live
 ```
 
 The project selects CPU PyTorch wheels on Linux and Windows. The ASR server has its own independent GPU backend. Add runtime dependencies with `uv add`, and development dependencies with `uv add --dev`.
@@ -36,9 +36,9 @@ Configure a PyPI Trusted Publisher with these values:
 
 | Field | Value |
 | --- | --- |
-| PyPI project name | `pauscribe` |
+| PyPI project name | `wayasr` |
 | Owner | `sitiyou` |
-| Repository name | `pauscribe` |
+| Repository name | `wayasr` |
 | Workflow name | `publish.yml` |
 | Environment name | `pypi` |
 

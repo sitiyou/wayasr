@@ -1,6 +1,6 @@
-# Pauscribe
+# WayASR
 
-**Pause + transcribe**：使用 llama.cpp 在本地转写音频，提供优先按停顿分段的实时字幕，以及简洁的 Rich Live 终端界面。默认模型为 Qwen3-ASR-1.7B Q8_0。
+使用 llama.cpp 在本地转写音频，提供优先按停顿分段的实时字幕，以及简洁的 Rich Live 终端界面。默认模型为 Qwen3-ASR-1.7B Q8_0。
 
 - 文件转写：连接本地或远程 `/v1/audio/transcriptions` 服务。
 - 实时字幕：采集 Linux 系统声音或麦克风，保留中间识别结果的可修正末尾。
@@ -11,9 +11,9 @@
 需要 Python 3.10+；新环境建议 Python 3.12，并确认 PyTorch/ONNX Runtime 有对应平台的安装包。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv。PyPI 上的发行版可直接安装：
 
 ```sh
-uv tool install --torch-backend cpu 'pauscribe[live]'
+uv tool install --torch-backend cpu 'wayasr[live]'
 uv tool update-shell
-pauscribe --help
+wayasr --help
 ```
 
 `uv tool install` 将命令安装到独立环境，不需要手动创建或激活虚拟环境。如果 shell 尚未包含 uv 的工具目录，请按照 `uv tool update-shell` 提示重新打开终端。需要指定 Python 时可加 `--python 3.12`。
@@ -21,18 +21,18 @@ pauscribe --help
 如果只需要文件转写、启动服务或管理 systemd，安装基础版本即可，不需要 PyTorch、VAD 或 Rich：
 
 ```sh
-uv tool install pauscribe
+uv tool install wayasr
 ```
 
 也可以从源码安装：
 
 ```sh
-git clone https://github.com/sitiyou/pauscribe.git
-cd pauscribe
+git clone https://github.com/sitiyou/wayasr.git
+cd wayasr
 uv tool install --torch-backend cpu '.[live]'
 ```
 
-从源码安装后修改了代码，可在项目目录重新运行安装命令并加 `--force` 更新；卸载使用 `uv tool uninstall pauscribe`。工具卸载不会自动卸载 systemd 服务，需要先执行 `pauscribe service uninstall`。
+从源码安装后修改了代码，可在项目目录重新运行安装命令并加 `--force` 更新；卸载使用 `uv tool uninstall wayasr`。工具卸载不会自动卸载 systemd 服务，需要先执行 `wayasr service uninstall`。
 
 实时采集使用 CPU PyTorch 运行 VAD，而 ASR 推理由独立的 llama.cpp 服务处理，无需为 VAD 安装 CUDA/ROCm 版 PyTorch。开发环境的 uv 配置同样优先使用 CPU PyTorch。
 
@@ -67,7 +67,7 @@ uvx --from huggingface-hub hf download ggml-org/Qwen3-ASR-1.7B-GGUF \
 ## 3. 启动转写服务
 
 ```sh
-pauscribe serve --model-dir ./models
+wayasr serve --model-dir ./models
 ```
 
 默认由 llama.cpp 选择设备，监听 `127.0.0.1:8087`。在另一个终端检查：
@@ -79,10 +79,10 @@ curl --fail http://127.0.0.1:8087/health
 按需选择设备，名称以 `llama-server --list-devices` 为准：
 
 ```sh
-pauscribe serve --model-dir ./models --device ROCm0
-pauscribe serve --model-dir ./models --device CUDA0
-pauscribe serve --model-dir ./models --device Vulkan0
-pauscribe serve --model-dir ./models --device none --flash-attn off
+wayasr serve --model-dir ./models --device ROCm0
+wayasr serve --model-dir ./models --device CUDA0
+wayasr serve --model-dir ./models --device Vulkan0
+wayasr serve --model-dir ./models --device none --flash-attn off
 ```
 
 默认尊重当前 `CUDA_VISIBLE_DEVICES`、`HIP_VISIBLE_DEVICES` 等限制。如果明确需要忽略这些限制，添加 `--clear-device-visibility`；仅对服务子进程生效，不修改当前 shell。清除限制后设备编号可能改变，请重新确认。
@@ -90,7 +90,7 @@ pauscribe serve --model-dir ./models --device none --flash-attn off
 其他常用选项：
 
 ```sh
-pauscribe serve --server-bin /path/to/llama-server \
+wayasr serve --server-bin /path/to/llama-server \
   --model /path/to/model.gguf --mmproj /path/to/mmproj.gguf \
   --host 127.0.0.1 --port 8087 --gpu-layers 99 --flash-attn auto
 ```
@@ -103,13 +103,13 @@ pauscribe serve --server-bin /path/to/llama-server \
 
 ```sh
 ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le audio.wav
-pauscribe transcribe audio.wav --language Chinese
+wayasr transcribe audio.wav --language Chinese
 ```
 
 省略 `--language` 自动识别语言。连接其他地址或增加超时：
 
 ```sh
-pauscribe transcribe audio.wav --url http://127.0.0.1:8087 --timeout 120
+wayasr transcribe audio.wav --url http://127.0.0.1:8087 --timeout 120
 ```
 
 当前文件模式将整个 WAV 一次提交；长文件应先分段，支持的最大时长取决于服务和模型。
@@ -129,23 +129,23 @@ sudo pacman -S libpulse
 默认采集系统输出声音：
 
 ```sh
-pauscribe live --language Chinese
+wayasr live --language Chinese
 ```
 
 采集麦克风或指定设备：
 
 ```sh
-pauscribe live --source @DEFAULT_SOURCE@ --language Chinese
+wayasr live --source @DEFAULT_SOURCE@ --language Chinese
 pactl list short sources
-pauscribe live --source YOUR_SOURCE_NAME
+wayasr live --source YOUR_SOURCE_NAME
 ```
 
 界面显示最近的已完成字幕、可修正的实时字幕、语音/静音状态、缓冲时长，以及最近一次最终转写的耗时和 RTF。历史最多保留 100 条，窗口显示其中最近若干条，不提供滚动操作。按 **Ctrl+C** 后等待已排队的最终转写完成，退出后保留界面。
 
 ```sh
-pauscribe live --plain
-pauscribe live --partial-interval 0
-pauscribe live --max-segment 10
+wayasr live --plain
+wayasr live --partial-interval 0
+wayasr live --max-segment 10
 ```
 
 `--plain` 禁用 TUI，`--partial-interval 0` 只识别最终结果，`--max-segment` 设置最大音频缓冲时长（范围 1–25 秒）。
@@ -164,16 +164,16 @@ pauscribe live --max-segment 10
 ## 初始化与持久化配置
 
 ```sh
-pauscribe config init
-pauscribe config show
+wayasr config init
+wayasr config show
 ```
 
 `config init` 交互式询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址、端口、客户端 URL、识别语言和采集源，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
 
 目录由 `platformdirs` 按当前平台管理。Linux 默认使用：
 
-- 配置：`~/.config/pauscribe/config.json`，尊重 `XDG_CONFIG_HOME`。
-- 未配置时的模型目录：`~/.local/share/pauscribe/models`，尊重 `XDG_DATA_HOME`。
+- 配置：`~/.config/wayasr/config.json`，尊重 `XDG_CONFIG_HOME`。
+- 未配置时的模型目录：`~/.local/share/wayasr/models`，尊重 `XDG_DATA_HOME`。
 
 macOS、Windows 使用平台标准用户目录；`config show` 显示实际配置文件位置和已保存值。
 
@@ -181,40 +181,40 @@ macOS、Windows 使用平台标准用户目录；`config show` 显示实际配�
 
 | 环境变量 | 用途 | 未配置时的默认值 |
 | --- | --- | --- |
-| `PAUSCRIBE_URL` | 文件及实时转写的服务地址 | `http://127.0.0.1:8087` |
-| `PAUSCRIBE_MODEL_DIR` | 服务模型目录 | 平台用户数据目录下的 `pauscribe/models` |
+| `WAYASR_URL` | 文件及实时转写的服务地址 | `http://127.0.0.1:8087` |
+| `WAYASR_MODEL_DIR` | 服务模型目录 | 平台用户数据目录下的 `wayasr/models` |
 
 `service install` 成功启动服务后，保存实际安装参数和客户端 URL；后续安装复用这些参数，`transcribe` 和 `live` 自动使用保存的端口。监听 `0.0.0.0` 时，客户端连接 `127.0.0.1`；监听 `::` 时连接 `[::1]`。如需保留 GPU 可见性限制，可用 `--keep-device-visibility` 覆盖此前保存的清除选项。
 
 配置文件损坏时会明确报错，不会静默使用错误的服务地址。已有 systemd drop-in 若修改实际监听地址或端口，仍需同步配置；安装器保存的是自身安装参数，不解析外部覆盖项。
 
-CLI 使用 Click，主命令和每个子命令均支持 `--help`。安装了项目的 Python 环境中也可使用 `python -m pauscribe` 调用；开发运行方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+CLI 使用 Click，主命令和每个子命令均支持 `--help`。安装了项目的 Python 环境中也可使用 `python -m wayasr` 调用；开发运行方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## Linux 用户服务（可选）
 
 在已登录的 Linux 用户会话中执行，无需 sudo 或手动编辑 unit 文件：
 
 ```sh
-pauscribe config init
-pauscribe service install
+wayasr config init
+wayasr service install
 ```
 
 也可以跳过初始化，直接用 `--model-dir ./models` 等参数安装；缺失的模型仍需先下载。
 
-该命令校验模型和 `llama-server`，将绝对路径写入 `~/.config/systemd/user/pauscribe.service`（尊重 `XDG_CONFIG_HOME`），自动重新加载 systemd、启用登录自启动并启动服务。重复执行会更新配置并重启服务。使用与 `serve` 相同的参数配置设备、端口和模型，例如：
+该命令校验模型和 `llama-server`，将绝对路径写入 `~/.config/systemd/user/wayasr.service`（尊重 `XDG_CONFIG_HOME`），自动重新加载 systemd、启用登录自启动并启动服务。重复执行会更新配置并重启服务。使用与 `serve` 相同的参数配置设备、端口和模型，例如：
 
 ```sh
-pauscribe service install --model-dir ./models --device ROCm0 --clear-device-visibility
-pauscribe service install --model-dir ./models --device none --flash-attn off
+wayasr service install --model-dir ./models --device ROCm0 --clear-device-visibility
+wayasr service install --model-dir ./models --device none --flash-attn off
 ```
 
 服务直接运行安装时解析到的 `llama-server`，不依赖安装目录或虚拟环境路径，但模型和可执行文件移动后需要重新执行安装命令。服务继承 systemd 用户管理器的环境，而不是安装命令所在 shell 的全部环境；`--clear-device-visibility` 会在 unit 中明确清除 GPU 可见性限制。已有自定义 drop-in 保留且仍可能覆盖安装参数。
 
 ```sh
-systemctl --user status pauscribe.service
-journalctl --user -u pauscribe.service -f
-systemctl --user stop pauscribe.service
-pauscribe service uninstall
+systemctl --user status wayasr.service
+journalctl --user -u wayasr.service -f
+systemctl --user stop wayasr.service
+wayasr service uninstall
 ```
 
 卸载会停止服务、取消自启动并删除生成的 unit，不删除模型、持久化配置或自定义 drop-in；客户端仍保留已保存的连接地址，便于重新部署。安装完成不代表模型已经加载就绪，可通过 `/health` 检查；模型加载失败请查看日志。

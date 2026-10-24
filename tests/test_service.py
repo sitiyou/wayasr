@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 from click.testing import CliRunner
 
-from pauscribe import cli, config, service
+from wayasr import cli, config, service
 
 
 def setup_service(tmp_path, monkeypatch):
@@ -17,7 +17,7 @@ def setup_service(tmp_path, monkeypatch):
     models.mkdir()
     for name in (cli.MODEL_NAME, cli.MMPROJ_NAME):
         (models / name).touch()
-    unit = tmp_path / "config/systemd/user/pauscribe.service"
+    unit = tmp_path / "config/systemd/user/wayasr.service"
     return run, models, unit
 
 
@@ -35,8 +35,8 @@ def test_install_generates_absolute_paths_and_restarts(tmp_path, monkeypatch):
     calls = [call.args[0] for call in run.call_args_list]
     assert calls == [["systemctl", "--user", "show-environment"],
                      ["systemctl", "--user", "daemon-reload"],
-                     ["systemctl", "--user", "enable", "pauscribe.service"],
-                     ["systemctl", "--user", "restart", "pauscribe.service"]]
+                     ["systemctl", "--user", "enable", "wayasr.service"],
+                     ["systemctl", "--user", "restart", "wayasr.service"]]
     assert not list(unit.parent.glob("tmp*"))
     saved = config.load_config()
     assert saved["url"] == "http://127.0.0.1:8087"
@@ -69,7 +69,7 @@ def test_uninstall_keeps_models_and_dropins(tmp_path, monkeypatch):
     assert not unit.exists()
     assert (dropin / "custom.conf").read_text() == "custom"
     assert (models / cli.MODEL_NAME).exists()
-    assert run.call_args_list[1].args[0] == ["systemctl", "--user", "disable", "--now", "pauscribe.service"]
+    assert run.call_args_list[1].args[0] == ["systemctl", "--user", "disable", "--now", "wayasr.service"]
 
 
 def test_unavailable_user_manager_does_not_write_unit(tmp_path, monkeypatch):
