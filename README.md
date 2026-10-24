@@ -8,10 +8,10 @@
 
 ## 1. 使用 uv 安装
 
-需要 Python 3.10+；新环境建议 Python 3.12，并确认 PyTorch/ONNX Runtime 有对应平台的安装包。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv，然后在项目目录执行：
+需要 Python 3.10+；新环境建议 Python 3.12，并确认 PyTorch/ONNX Runtime 有对应平台的安装包。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv。PyPI 上的发行版可直接安装：
 
 ```sh
-uv tool install --torch-backend cpu '.[live]'
+uv tool install --torch-backend cpu 'pauscribe[live]'
 uv tool update-shell
 pauscribe --help
 ```
@@ -21,10 +21,18 @@ pauscribe --help
 如果只需要文件转写、启动服务或管理 systemd，安装基础版本即可，不需要 PyTorch、VAD 或 Rich：
 
 ```sh
-uv tool install .
+uv tool install pauscribe
 ```
 
-安装后修改了源码，可在项目目录重新运行安装命令并加 `--force` 更新；卸载使用 `uv tool uninstall pauscribe`。工具卸载不会自动卸载 systemd 服务，需要先执行 `pauscribe service uninstall`。
+也可以从源码安装：
+
+```sh
+git clone https://github.com/sitiyou/pauscribe.git
+cd pauscribe
+uv tool install --torch-backend cpu '.[live]'
+```
+
+从源码安装后修改了代码，可在项目目录重新运行安装命令并加 `--force` 更新；卸载使用 `uv tool uninstall pauscribe`。工具卸载不会自动卸载 systemd 服务，需要先执行 `pauscribe service uninstall`。
 
 实时采集使用 CPU PyTorch 运行 VAD，而 ASR 推理由独立的 llama.cpp 服务处理，无需为 VAD 安装 CUDA/ROCm 版 PyTorch。开发环境的 uv 配置同样优先使用 CPU PyTorch。
 
@@ -153,14 +161,32 @@ pauscribe live --max-segment 10
 - 没有词时间戳或强制对齐，无法保证切点严格对应完整句子；英文缩写等复杂断句也可能不准确。
 - 最终结果积压超过 16 段会明确报错，不静默丢弃。可关闭中间识别、使用更快的模型或 GPU 来减轻积压。
 
-## 配置默认值
+## 初始化与持久化配置
 
-命令行参数优先于环境变量：
+```sh
+pauscribe config init
+pauscribe config show
+```
 
-| 环境变量 | 用途 | 默认值 |
+`config init` 交互式询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址、端口、客户端 URL、识别语言和采集源，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
+
+目录由 `platformdirs` 按当前平台管理。Linux 默认使用：
+
+- 配置：`~/.config/pauscribe/config.json`，尊重 `XDG_CONFIG_HOME`。
+- 未配置时的模型目录：`~/.local/share/pauscribe/models`，尊重 `XDG_DATA_HOME`。
+
+macOS、Windows 使用平台标准用户目录；`config show` 显示实际配置文件位置和已保存值。
+
+默认值优先级为：**命令行参数 → 对应环境变量 → 配置文件 → 内置默认值**。临时命令行或环境变量覆盖不会修改文件。
+
+| 环境变量 | 用途 | 未配置时的默认值 |
 | --- | --- | --- |
 | `PAUSCRIBE_URL` | 文件及实时转写的服务地址 | `http://127.0.0.1:8087` |
-| `PAUSCRIBE_MODEL_DIR` | 服务模型目录 | 当前工作目录下的 `models` |
+| `PAUSCRIBE_MODEL_DIR` | 服务模型目录 | 平台用户数据目录下的 `pauscribe/models` |
+
+`service install` 成功启动服务后，保存实际安装参数和客户端 URL；后续安装复用这些参数，`transcribe` 和 `live` 自动使用保存的端口。监听 `0.0.0.0` 时，客户端连接 `127.0.0.1`；监听 `::` 时连接 `[::1]`。如需保留 GPU 可见性限制，可用 `--keep-device-visibility` 覆盖此前保存的清除选项。
+
+配置文件损坏时会明确报错，不会静默使用错误的服务地址。已有 systemd drop-in 若修改实际监听地址或端口，仍需同步配置；安装器保存的是自身安装参数，不解析外部覆盖项。
 
 CLI 使用 Click，主命令和每个子命令均支持 `--help`。安装了项目的 Python 环境中也可使用 `python -m pauscribe` 调用；开发运行方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -169,8 +195,11 @@ CLI 使用 Click，主命令和每个子命令均支持 `--help`。安装了项�
 在已登录的 Linux 用户会话中执行，无需 sudo 或手动编辑 unit 文件：
 
 ```sh
-pauscribe service install --model-dir ./models
+pauscribe config init
+pauscribe service install
 ```
+
+也可以跳过初始化，直接用 `--model-dir ./models` 等参数安装；缺失的模型仍需先下载。
 
 该命令校验模型和 `llama-server`，将绝对路径写入 `~/.config/systemd/user/pauscribe.service`（尊重 `XDG_CONFIG_HOME`），自动重新加载 systemd、启用登录自启动并启动服务。重复执行会更新配置并重启服务。使用与 `serve` 相同的参数配置设备、端口和模型，例如：
 
@@ -188,6 +217,6 @@ systemctl --user stop pauscribe.service
 pauscribe service uninstall
 ```
 
-卸载会停止服务、取消自启动并删除生成的 unit，不删除模型或自定义 drop-in。安装完成不代表模型已经加载就绪，可通过 `/health` 检查；模型加载失败请查看日志。
+卸载会停止服务、取消自启动并删除生成的 unit，不删除模型、持久化配置或自定义 drop-in；客户端仍保留已保存的连接地址，便于重新部署。安装完成不代表模型已经加载就绪，可通过 `/health` 检查；模型加载失败请查看日志。
 
 用户服务通常随登录会话启动；是否需要登出后继续运行由系统的 user lingering 配置决定。

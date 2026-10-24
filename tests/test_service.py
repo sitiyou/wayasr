@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 from click.testing import CliRunner
 
-from pauscribe import cli, service
+from pauscribe import cli, config, service
 
 
 def setup_service(tmp_path, monkeypatch):
@@ -38,6 +38,10 @@ def test_install_generates_absolute_paths_and_restarts(tmp_path, monkeypatch):
                      ["systemctl", "--user", "enable", "pauscribe.service"],
                      ["systemctl", "--user", "restart", "pauscribe.service"]]
     assert not list(unit.parent.glob("tmp*"))
+    saved = config.load_config()
+    assert saved["url"] == "http://127.0.0.1:8087"
+    assert saved["server"]["model_dir"] == str(models)
+    assert saved["server"]["device"] == "ROCm0"
 
 
 def test_install_replaces_symlink_without_modifying_target(tmp_path, monkeypatch):
@@ -81,6 +85,33 @@ def test_service_rejects_unsupported_platform(monkeypatch):
     result = CliRunner().invoke(cli.main, ["service", "install"])
     assert result.exit_code == 1
     assert "requires Linux" in result.output
+
+
+def test_failed_restart_does_not_replace_saved_defaults(tmp_path, monkeypatch):
+    run, models, _ = setup_service(tmp_path, monkeypatch)
+    config.save_config({"url": "http://localhost:8087", "server": {"port": 8087}})
+    before = config.config_path().read_bytes()
+
+    def systemctl(command, **kwargs):
+        if "restart" in command:
+            raise subprocess.CalledProcessError(1, command)
+
+    run.side_effect = systemctl
+    result = CliRunner().invoke(cli.main, ["service", "install", "--model-dir", str(models), "--port", "9000"])
+    assert result.exit_code == 1
+    assert config.config_path().read_bytes() == before
+
+
+def test_install_reuses_port_and_normalizes_ipv6(tmp_path, monkeypatch):
+    run, models, _ = setup_service(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli.main, ["service", "install", "--model-dir", str(models), "--host", "::", "--port", "9000"])
+    assert result.exit_code == 0, result.output
+    assert config.load_config()["url"] == "http://[::1]:9000"
+    run.reset_mock()
+    result = runner.invoke(cli.main, ["service", "install"])
+    assert result.exit_code == 0, result.output
+    assert config.load_config()["server"]["port"] == 9000
 
 
 def test_unit_argument_escaping():

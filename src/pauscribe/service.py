@@ -1,11 +1,10 @@
-import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 
 from .cli import server_command
+from .config import config_home, save_server_config, write_text_atomic
 
 
 UNIT = "pauscribe.service"
@@ -42,25 +41,14 @@ def manage(args):
     if sys.platform != "linux" or not shutil.which("systemctl"):
         raise ValueError("service management requires Linux with systemd and a running user manager")
     subprocess.run(["systemctl", "--user", "show-environment"], check=True, stdout=subprocess.DEVNULL)
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser()
-    if not config.is_absolute():
-        raise ValueError("XDG_CONFIG_HOME must be an absolute path")
-    unit = config / "systemd" / "user" / UNIT
+    unit = config_home() / "systemd" / "user" / UNIT
     if args.action == "install":
         content = render_unit(args)
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=unit.parent, delete=False) as file:
-            temporary = Path(file.name)
-            try:
-                file.write(content)
-                file.flush()
-                temporary.chmod(0o644)
-                os.replace(temporary, unit)
-            finally:
-                temporary.unlink(missing_ok=True)
+        write_text_atomic(unit, content, mode=0o644)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "--user", "enable", UNIT], check=True)
         subprocess.run(["systemctl", "--user", "restart", UNIT], check=True)
+        save_server_config(args, shutil.which(args.server_bin))
         print(f"Installed and started {unit}")
         if any(unit.with_name(UNIT + ".d").glob("*.conf")):
             print("Existing systemd drop-ins remain active and may override these settings.")

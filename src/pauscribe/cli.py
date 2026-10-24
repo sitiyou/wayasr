@@ -10,6 +10,7 @@ import click
 import requests
 
 from .client import LlamaASR
+from .config import config_path, default_model_dir, load_config, save_config, server_config
 
 
 MODEL_NAME = "Qwen3-ASR-1.7B-Q8_0.gguf"
@@ -19,7 +20,7 @@ MMPROJ_NAME = "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
 def server_options(command):
     options = [
         click.option("--server-bin", default="llama-server", show_default=True),
-        click.option("--model-dir", type=click.Path(path_type=Path), default="models", envvar="PAUSCRIBE_MODEL_DIR", show_default=True),
+        click.option("--model-dir", type=click.Path(path_type=Path), default=default_model_dir, envvar="PAUSCRIBE_MODEL_DIR", show_default="user data directory/models"),
         click.option("--model", type=click.Path(path_type=Path), help="Override the ASR GGUF path."),
         click.option("--mmproj", type=click.Path(path_type=Path), help="Override the matching projector path."),
         click.option("--device", help="llama.cpp device: ROCm0, CUDA0, Vulkan0, or none for CPU."),
@@ -27,7 +28,7 @@ def server_options(command):
         click.option("--flash-attn", type=click.Choice(["on", "off", "auto"]), default="auto", show_default=True),
         click.option("--host", default="127.0.0.1", show_default=True),
         click.option("--port", type=click.IntRange(1, 65535), default=8087, show_default=True),
-        click.option("--clear-device-visibility", is_flag=True, help="Clear GPU visibility filters only for the server."),
+        click.option("--clear-device-visibility/--keep-device-visibility", default=False, help="Clear or preserve GPU visibility filters only for the server."),
     ]
     for option in reversed(options):
         command = option(command)
@@ -94,8 +95,20 @@ def serve(args):
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-def main():
+@click.pass_context
+@command_errors
+def main(ctx):
     """Pause-aware local transcription with llama.cpp."""
+    config = load_config()
+    client = config.get("client", {}).copy()
+    if "url" in config:
+        client["url"] = config["url"]
+    ctx.default_map = {
+        "serve": config.get("server", {}),
+        "service": {"install": config.get("server", {})},
+        "transcribe": client,
+        "live": {**client, **config.get("live", {})},
+    }
 
 
 @main.command("serve")
@@ -135,6 +148,55 @@ def live(**options):
     from .live import run
 
     run(SimpleNamespace(**options))
+
+
+@main.group("config")
+def config_group():
+    """Initialize or inspect persistent user defaults."""
+
+
+@config_group.command("init")
+@click.pass_context
+@command_errors
+def init_config(ctx):
+    """Interactively configure server and client defaults without deploying."""
+    config = load_config()
+    path = config_path()
+    if path.exists():
+        click.confirm(f"Update configuration at {path}?", default=True, abort=True)
+    with serve_command.make_context("serve", [], parent=ctx.find_root()) as server_ctx:
+        options = server_ctx.params.copy()
+    previous_url = server_config(SimpleNamespace(**options))["url"]
+    saved_url = config.get("url")
+    options["server_bin"] = click.prompt("llama-server executable", default=options["server_bin"])
+    options["model_dir"] = Path(click.prompt("Model directory", default=str(options["model_dir"])))
+    device = click.prompt("Device (auto lets llama.cpp choose)", default=options["device"] or "auto")
+    options["device"] = None if device == "auto" else device
+    options["clear_device_visibility"] = click.confirm("Clear GPU visibility filters for the server?", default=options["clear_device_visibility"])
+    options["host"] = click.prompt("Listen address", default=options["host"])
+    options["port"] = click.prompt("Port", default=options["port"], type=click.IntRange(1, 65535))
+    config.update(server_config(SimpleNamespace(**options), shutil.which(options["server_bin"])))
+    url_default = saved_url if saved_url and saved_url != previous_url else config["url"]
+    config["url"] = click.prompt("Client service URL", default=url_default)
+    language = click.prompt("Language (auto detects it)", default=config.get("client", {}).get("language") or "auto")
+    config.setdefault("client", {})["language"] = None if language == "auto" else language
+    config.setdefault("live", {})["source"] = click.prompt("Live audio source", default=config.get("live", {}).get("source", "@DEFAULT_MONITOR@"))
+    click.echo(f"Save to {path}")
+    click.echo(f"Service URL: {config['url']}")
+    if not click.confirm("Save configuration?", default=True):
+        raise click.Abort()
+    save_config(config)
+    click.echo("Saved. Run 'pauscribe service install' to deploy the configured server.")
+
+
+@config_group.command("show")
+@command_errors
+def show_config():
+    """Show the configuration file path and saved values."""
+    import json
+
+    click.echo(str(config_path()))
+    click.echo(json.dumps(load_config(), ensure_ascii=False, indent=2))
 
 
 @main.group()

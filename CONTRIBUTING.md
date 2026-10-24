@@ -28,4 +28,24 @@ For a standalone command installation from the checkout:
 uv tool install --torch-backend cpu '.[live]'
 ```
 
+## Publishing to PyPI
+
+CI runs the tests on Python 3.10, 3.12, and 3.14. Publishing runs separately when a GitHub release is published. The release tag must match the package version, for example `v0.1.0` for version `0.1.0` in `pyproject.toml`.
+
+Configure a PyPI Trusted Publisher with these values:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `pauscribe` |
+| Owner | `sitiyou` |
+| Repository name | `pauscribe` |
+| Workflow name | `publish.yml` |
+| Environment name | `pypi` |
+
+The GitHub repository must have an environment named `pypi`. Use a pending publisher for the first release, or add the publisher in the existing PyPI project's publishing settings for later setup. No PyPI API token or repository secret is needed.
+
+Before releasing, update the version in `pyproject.toml`, refresh `uv.lock` with `uv lock`, and commit the changes. Ensure the commits are available in the GitHub repository and CI passes, then publish a GitHub release using the matching version tag. Creating a tag alone or saving a draft release does not trigger publishing. Published PyPI versions cannot be overwritten; each subsequent release needs a new version.
+
+The publishing workflow verifies the version, runs tests, builds and checks both distributions, and smoke-tests the wheel. A separate job publishes the resulting artifacts using OIDC with the `pypi` environment. Only that job receives `id-token: write`.
+
 Model files, virtual environments, recordings, and build output must not be committed. Keep the HTTP client lightweight and import VAD dependencies only when the live command runs. GPU selection must remain configurable, without modifying the parent process environment. The service installer uses the same server argument builder as the foreground command and writes an independent user unit with absolute executable and model paths.
