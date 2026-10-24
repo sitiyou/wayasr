@@ -38,7 +38,7 @@ uv tool install --torch-backend cpu '.[live]'
 
 ## 2. 安装 llama.cpp 与下载模型
 
-已有远程转写服务时可以跳过本节，直接指定 `--url`。
+已有兼容的转写 API 时可以跳过本节和本地服务启动步骤，通过 `wayasr config init` 接入，或直接指定 `--url`。
 
 从 [llama.cpp Releases](https://github.com/ggml-org/llama.cpp/releases) 获取符合平台和 GPU 后端的版本，或按[官方构建说明](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)编译。需要较新、支持 Qwen3-ASR 音频转写及 `--mmproj-device` 的版本。
 
@@ -195,7 +195,9 @@ wayasr config init
 wayasr config show
 ```
 
-`config init` 交互式询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址、端口、客户端 URL、识别语言、采集源和是否启用 Wayland 桌面字幕，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
+`config init` 首先询问是否配置本地 llama.cpp 服务。选择否即可接入已有 API，只需设置客户端 URL、识别语言、采集源和是否启用 Wayland 桌面字幕，无需安装 llama.cpp 或下载模型；已有本地服务配置会保留。选择是时，还会询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址和端口，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
+
+已有 API 的 URL 应填写服务根地址（例如 `https://asr.example.com`），不要包含 `/v1/audio/transcriptions`；客户端会自动追加该路径。服务须兼容当前客户端的 WAV multipart 上传及 JSON `text` 响应；目前不提供 API Key 或自定义模型参数配置。
 
 目录由 `platformdirs` 按当前平台管理。Linux 默认使用：
 
