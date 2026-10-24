@@ -25,7 +25,7 @@ class AudioSegmenter:
         self.silence = 0
         self.overlap = 0
 
-    def push(self, raw, voiced):
+    def push(self, raw, voiced, defer_fallback=False):
         if not self.frames:
             if not voiced:
                 self.preroll.append(raw)
@@ -36,6 +36,11 @@ class AudioSegmenter:
         self.frames.append(raw)
         self.voiced.append(voiced)
         self.silence = 0 if voiced else self.silence + 1
+        if not defer_fallback:
+            return self.fallback()
+        return None
+
+    def fallback(self):
         if self.silence >= 15:
             return self.finish()
         if len(self.frames) >= self.soft_chunks and self.silence >= 10:
@@ -54,15 +59,14 @@ class AudioSegmenter:
         return self._cut(cut, overlap)
 
     @property
-    def at_boundary(self):
-        return len(self.frames) >= self.soft_chunks and self.silence >= 4
+    def can_commit(self):
+        return len(self.frames) >= self.soft_chunks
 
     def commit(self, cut):
         if (not self.soft_chunks <= cut <= len(self.frames)
-                or any(self.voiced[cut - 4:cut])
                 or sum(self.voiced[self.overlap:cut]) < 5):
             return None
-        return self._cut(cut)
+        return self._cut(cut, self.overlap_chunks)
 
     def _cut(self, cut, overlap=0):
         result = self._result(cut, False)
@@ -177,15 +181,15 @@ class TranscriptionWorker:
         self.thread = threading.Thread(target=self.run, name="asr-inference")
         self.thread.start()
 
-    def submit(self, audio, segment, final=False, overlap=0, end=True, boundary=False):
+    def submit(self, audio, segment, final=False, overlap=0, end=True, can_commit=False):
         with self.condition:
             self.segment = segment
             if final:
                 self.partial = None
-                self.finals.put_nowait((audio, segment, overlap, end, boundary))
+                self.finals.put_nowait((audio, segment, overlap, end, can_commit))
                 self.finalized_segment = segment
             else:
-                self.partial = (audio, segment, overlap, end, boundary)
+                self.partial = (audio, segment, overlap, end, can_commit)
             self.condition.notify()
 
     def take_cut(self, segment):
@@ -205,10 +209,10 @@ class TranscriptionWorker:
                         lambda: self.closed or not self.finals.empty() or self.partial is not None
                     )
                     if not self.finals.empty():
-                        audio, segment, overlap, end, boundary = self.finals.get_nowait()
+                        audio, segment, overlap, end, can_commit = self.finals.get_nowait()
                         final = True
                     elif self.partial is not None:
-                        audio, segment, overlap, end, boundary = self.partial
+                        audio, segment, overlap, end, can_commit = self.partial
                         self.partial = None
                         final = False
                     else:
@@ -225,7 +229,7 @@ class TranscriptionWorker:
                             if final:
                                 self.previous_partial = None
                             else:
-                                if (boundary and self.previous_partial == (segment, text)
+                                if (can_commit and self.previous_partial == (segment, text)
                                         and any(match.end() == len(text)
                                                 for match in SENTENCE_BOUNDARY.finditer(text))):
                                     self.cuts.put((segment, len(audio) // 1024))
@@ -325,22 +329,20 @@ def capture(args, overlay=None):
             samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
             probability = float(vad(torch.from_numpy(samples), 16000).item())
             voiced = probability >= 0.5
-            result = segmenter.push(raw, voiced)
+            segmenter.push(raw, voiced, defer_fallback=True)
+            cut = worker.take_cut(segment)
+            result = segmenter.commit(cut) if cut is not None else None
+            if result is None:
+                result = segmenter.fallback()
             if view:
                 view.audio(voiced, len(segmenter.frames) * 0.032)
             if result is not None:
                 submit_final(result)
-            else:
-                cut = worker.take_cut(segment)
-                committed = segmenter.commit(cut) if cut is not None else None
-                if committed is not None:
-                    submit_final(committed)
-                elif (args.partial_interval and sum(segmenter.voiced[segmenter.overlap:]) >= 5
-                      and ((segmenter.at_boundary and segmenter.silence == 4)
-                           or time.monotonic() - last_partial >= args.partial_interval)):
-                    worker.submit(b"".join(segmenter.frames), segment, overlap=segmenter.overlap,
-                                  boundary=segmenter.at_boundary)
-                    last_partial = time.monotonic()
+            elif (args.partial_interval and sum(segmenter.voiced[segmenter.overlap:]) >= 5
+                  and time.monotonic() - last_partial >= args.partial_interval):
+                worker.submit(b"".join(segmenter.frames), segment, overlap=segmenter.overlap,
+                              can_commit=segmenter.can_commit)
+                last_partial = time.monotonic()
     except KeyboardInterrupt:
         pass
     finally:
