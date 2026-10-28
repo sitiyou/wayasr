@@ -58,6 +58,34 @@ def command_errors(command):
 
 
 def server_command(args):
+    config = load_config()
+    settings = config.get("server", {})
+    if config.get("backend", "llama.cpp") == "audio.cpp":
+        import json
+        from .config import write_text_atomic
+
+        binary = shutil.which(args.server_bin)
+        if not binary:
+            raise ValueError(f"audiocpp_server not found: {args.server_bin}")
+        required = ["asr_path"]
+        if config.get("live", {}).get("fa", True):
+            required.append("aligner_path")
+        for name in required:
+            if not settings.get(name):
+                raise ValueError(f"Configure server.{name} with 'wayasr config init' before starting a local audio.cpp server")
+        models = [{"id": settings.get("asr_model", "qwen3-asr"), "family": "qwen3_asr",
+                   "path": str(Path(settings["asr_path"]).expanduser().resolve()), "task": "asr", "mode": "offline"}]
+        if config.get("live", {}).get("fa", True):
+            models.append({"id": settings.get("aligner_model", "qwen3-align"), "family": "qwen3_forced_aligner",
+                           "path": str(Path(settings["aligner_path"]).expanduser().resolve()), "task": "align", "mode": "offline"})
+        for model in models:
+            if not Path(model["path"]).exists():
+                raise ValueError(f"model file not found: {model['path']}")
+        path = config_path().with_name("audio-server.json")
+        write_text_atomic(path, json.dumps({"host": args.host, "port": args.port,
+                          "backend": settings.get("audio_backend", "cpu"), "lazy_load": True,
+                          "idle_unload_ms": settings.get("idle_seconds", 0) * 1000, "models": models}, indent=2) + "\n")
+        return [binary, "--config", str(path)]
     binary = shutil.which(args.server_bin)
     if not binary:
         raise ValueError(f"llama-server not found: {args.server_bin}; install llama.cpp or use --server-bin")
@@ -72,6 +100,9 @@ def server_command(args):
                "--host", args.host, "--port", str(args.port)]
     if args.device:
         command.extend(["--device", args.device, "--mmproj-device", args.device])
+    idle = settings.get("idle_seconds", 0)
+    if idle:
+        command.extend(["--sleep-idle-seconds", str(idle)])
     return command
 
 
@@ -98,7 +129,7 @@ def serve(args):
 @click.pass_context
 @command_errors
 def main(ctx):
-    """WayASR: pause-aware local transcription with llama.cpp."""
+    """WayASR: pause-aware local transcription."""
     config = load_config()
     client = config.get("client", {}).copy()
     if "url" in config:
@@ -115,7 +146,7 @@ def main(ctx):
 @server_options
 @command_errors
 def serve_command(**options):
-    """Start a llama.cpp audio server."""
+    """Start the configured audio server."""
     raise click.exceptions.Exit(serve(SimpleNamespace(**options)))
 
 
@@ -130,6 +161,9 @@ def transcribe(audio, url, language, timeout):
             raise ValueError("WAV must be mono, 16-bit PCM, 16000 Hz; convert with ffmpeg first")
         pcm = wav.readframes(wav.getnframes())
     client = LlamaASR(url, language, timeout)
+    config = load_config()
+    if config.get("backend") == "audio.cpp":
+        client.model = config.get("server", {}).get("asr_model", "qwen3-asr")
     try:
         click.echo(client.transcribe(pcm))
     finally:
@@ -150,6 +184,13 @@ def live(**options):
     """Live Linux system audio or microphone captions."""
     from .live import run
 
+    config = load_config()
+    settings = config.get("server", {})
+    if config.get("backend") == "audio.cpp":
+        options["asr_model"] = settings.get("asr_model", "qwen3-asr")
+        if config.get("live", {}).get("fa", True):
+            options["aligner_url"] = options["url"]
+            options["aligner_model"] = settings.get("aligner_model", "qwen3-align")
     run(SimpleNamespace(**options))
 
 
@@ -167,24 +208,49 @@ def init_config(ctx):
     path = config_path()
     if path.exists():
         click.confirm(f"Update configuration at {path}?", default=True, abort=True)
-    local_server = click.confirm("Configure a local llama.cpp server?", default="server" in config or "url" not in config)
+    backend = click.prompt("Backend", type=click.Choice(["llama.cpp", "audio.cpp"]), default=config.get("backend", "llama.cpp"))
+    previous_backend = config.get("backend", "llama.cpp")
+    config["backend"] = backend
+    config.setdefault("live", {}).pop("aligner_url", None)
+    config["live"].pop("aligner_model", None)
+    config["live"]["fa"] = backend == "audio.cpp" and click.confirm("Enable forced alignment?", default=config["live"].get("fa", True) if previous_backend == backend else True)
+    local_server = click.confirm("Configure a local server?", default="server" in config or "url" not in config)
     url_default = config.get("url", "http://127.0.0.1:8087")
     if local_server:
         with serve_command.make_context("serve", [], parent=ctx.find_root()) as server_ctx:
             options = server_ctx.params.copy()
         previous_url = server_config(SimpleNamespace(**options))["url"]
         saved_url = config.get("url")
-        options["server_bin"] = click.prompt("llama-server executable", default=options["server_bin"])
-        options["model_dir"] = Path(click.prompt("Model directory", default=str(options["model_dir"])))
-        device = click.prompt("Device (auto lets llama.cpp choose)", default=options["device"] or "auto")
-        options["device"] = None if device == "auto" else device
+        options["server_bin"] = click.prompt("Server executable", default=config.get("server", {}).get("server_bin", "audiocpp_server" if backend == "audio.cpp" else "llama-server") if previous_backend == backend else ("audiocpp_server" if backend == "audio.cpp" else "llama-server"))
+        if backend == "llama.cpp":
+            options["model_dir"] = Path(click.prompt("Model directory", default=str(options["model_dir"])))
+            device = click.prompt("Device (auto lets llama.cpp choose)", default=options["device"] or "auto")
+            options["device"] = None if device == "auto" else device
         options["clear_device_visibility"] = click.confirm("Clear GPU visibility filters for the server?", default=options["clear_device_visibility"])
         options["host"] = click.prompt("Listen address", default=options["host"])
         options["port"] = click.prompt("Port", default=options["port"], type=click.IntRange(1, 65535))
-        config.update(server_config(SimpleNamespace(**options), shutil.which(options["server_bin"])))
+        updated = server_config(SimpleNamespace(**options), shutil.which(options["server_bin"]))
+        updated["server"] = {**config.get("server", {}), **updated["server"]}
+        config.update(updated)
         url_default = saved_url if saved_url and saved_url != previous_url else config["url"]
+    settings = config.setdefault("server", {})
+    settings["backend"] = backend
+    if backend == "audio.cpp":
+        settings["asr_model"] = click.prompt("ASR model ID", default=settings.get("asr_model", "qwen3-asr"))
+        if config["live"]["fa"]:
+            settings["aligner_model"] = click.prompt("FA model ID", default=settings.get("aligner_model", "qwen3-align"))
+        if local_server:
+            settings["audio_backend"] = click.prompt("audio.cpp compute backend", default=settings.get("audio_backend", "cpu"))
+            settings["asr_path"] = click.prompt("audio.cpp ASR model path", default=settings.get("asr_path", ""))
+            if config["live"]["fa"]:
+                settings["aligner_path"] = click.prompt("audio.cpp FA model path", default=settings.get("aligner_path", ""))
+    if local_server:
+        settings["idle_seconds"] = click.prompt("Idle unload seconds (0 disables)", default=settings.get("idle_seconds", 0), type=click.IntRange(min=0))
     config["url"] = click.prompt("Client service URL", default=url_default)
     language = click.prompt("Language (auto detects it)", default=config.get("client", {}).get("language") or "auto")
+    while config["live"]["fa"] and language == "auto":
+        click.echo("Forced alignment requires an explicit language.")
+        language = click.prompt("Language")
     config.setdefault("client", {})["language"] = None if language == "auto" else language
     config.setdefault("live", {})["source"] = click.prompt("Live audio source", default=config.get("live", {}).get("source", "@DEFAULT_MONITOR@"))
     config["live"]["overlay"] = click.confirm("Enable Wayland desktop captions (Linux, Python 3.14+)?", default=config["live"].get("overlay", False))

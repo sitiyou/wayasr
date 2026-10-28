@@ -59,7 +59,7 @@ def test_saved_server_defaults_and_explicit_override(monkeypatch):
 def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     models = tmp_path / "model directory"
-    answers = ["y", "llama-server", str(models), "none", "n", "0.0.0.0", "9000", "", "Chinese", "@DEFAULT_SOURCE@", "y", "y"]
+    answers = ["llama.cpp", "y", "llama-server", str(models), "none", "n", "0.0.0.0", "9000", "0", "", "Chinese", "@DEFAULT_SOURCE@", "y", "y"]
     runner = CliRunner()
     result = runner.invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
@@ -83,12 +83,12 @@ def test_init_existing_api_skips_server_setup(monkeypatch, existing):
     if existing:
         config.save_config(existing)
     monkeypatch.setattr(cli.shutil, "which", Mock(side_effect=AssertionError("Must not resolve a local server")))
-    answers = (["y"] if existing else []) + ["n", "https://asr.example.test", "auto", "", "n", "y"]
+    answers = (["y"] if existing else []) + ["llama.cpp", "n", "https://asr.example.test", "auto", "", "n", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     saved = config.load_config()
     assert saved["url"] == "https://asr.example.test"
-    assert saved.get("server") == existing.get("server")
+    assert saved["server"] == {**existing.get("server", {}), "backend": "llama.cpp"}
     assert "Model directory" not in result.output
     assert "service install" not in result.output
     assert "configured API" in result.output
@@ -105,11 +105,11 @@ def test_init_abort_keeps_previous_config():
 def test_reinitialization_preserves_remote_url_and_can_cancel():
     config.save_config({"url": "https://remote.example.test:9000"})
     runner = CliRunner()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nn\n" + "\n" * 5)
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nllama.cpp\nn\n" + "\n" * 5)
     assert result.exit_code == 0, result.output
     assert config.load_config()["url"] == "https://remote.example.test:9000"
     before = config.config_path().read_bytes()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nn\n" + "\n" * 4 + "n\n")
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nllama.cpp\nn\n" + "\n" * 4 + "n\n")
     assert result.exit_code != 0
     assert config.config_path().read_bytes() == before
 

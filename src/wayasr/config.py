@@ -37,6 +37,11 @@ def load_config():
     for name in ("server", "client", "live"):
         if name in config and not isinstance(config[name], dict):
             raise ValueError(f"Expected a {name} object at {path}")
+    if config.get("backend", "llama.cpp") not in ("llama.cpp", "audio.cpp"):
+        raise ValueError(f"Expected backend llama.cpp or audio.cpp at {path}")
+    idle = config.get("server", {}).get("idle_seconds", 0)
+    if not isinstance(idle, int) or isinstance(idle, bool) or idle < 0:
+        raise ValueError(f"Expected nonnegative idle_seconds at {path}")
     return config
 
 
@@ -78,5 +83,7 @@ def server_config(args, binary=None):
 
 def save_server_config(args, binary):
     config = load_config()
-    config.update(server_config(args, binary))
+    updated = server_config(args, binary)
+    updated["server"] = {**config.get("server", {}), **updated["server"]}
+    config.update(updated)
     save_config(config)

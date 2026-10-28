@@ -178,15 +178,70 @@ wayasr live --overlay --overlay-font-size 48 --overlay-duration 10
 
 如果没有显示，请确认服务已就绪、音源有声音、`WAYLAND_DISPLAY` 有效、合成器支持 layer-shell，以及 Vulkan 驱动可用；查看终端中的 asslayer 日志。
 
+### 可选 GGUF 强制对齐（实验）
+
+`wayasr config init` 可选择 llama.cpp 或 [audio.cpp](https://github.com/0xShug0/audio.cpp)。llama.cpp 使用原有的标点/VAD 分段；audio.cpp 在同一个服务中运行 ASR 和可选的 Qwen3-ForcedAligner。初始化默认启用 FA，也可关闭；不支持混合两个后端。运行命令只需 `--url`，后端、模型 ID 和 FA 开关均保存在配置文件中。
+
+安装支持 `qwen3_forced_aligner` 的 `audiocpp_server`，并下载 **audio.cpp 原生格式**的 GGUF；llama.cpp 的 GGUF 不保证兼容。下载默认复用 Hugging Face 缓存，不必复制到项目的 `models/`：
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com uvx --from huggingface-hub hf download \
+  audio-cpp/audio.cpp-gguf \
+  Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf
+```
+
+初始化本地 audio.cpp 服务时填写 ASR 和 FA 模型路径，工具会生成服务配置。连接外部服务时，由用户配置两个模型，例如：
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 8087,
+  "backend": "cpu",
+  "threads": 8,
+  "lazy_load": true,
+  "models": [
+    {
+      "id": "qwen3-asr",
+      "family": "qwen3_asr",
+      "path": "/absolute/path/to/audio-cpp-asr-model",
+      "task": "asr",
+      "mode": "offline"
+    },
+    {
+      "id": "qwen3-align",
+      "family": "qwen3_forced_aligner",
+      "path": "/absolute/path/to/qwen3-forced-aligner-0.6b-q8_0.gguf",
+      "task": "align",
+      "mode": "offline"
+    }
+  ]
+}
+```
+
+外部服务启动后，初始化选择 audio.cpp 并填写同一 URL；本地服务可用 `wayasr serve` 或 `wayasr service install` 管理：
+
+```bash
+audiocpp_server --config server.json --no-ui
+wayasr live --language Chinese --url http://127.0.0.1:8087
+```
+
+配置中的 `server.asr_model` 和 `server.aligner_model` 默认分别为 `qwen3-asr` 和 `qwen3-align`，不是模型文件路径。`live.fa` 控制是否启用对齐。对齐需要明确的 `--language`，且 `--partial-interval` 必须大于 0。服务可按 audio.cpp 的支持情况改用 GPU；WayASR 不修改 GPU 可见性环境变量。
+
+同一段连续两次识别的公共前缀包含完整句子、且音频窗口累计约 5 秒后，才尝试对齐；同一候选句子不会随每次 partial 重复对齐。只提交时间戳确认的前缀及其已稳定文本，保留约 512 ms 音频上下文和边界之后的全部音频。时间戳异常、文本不匹配、超时或服务不可用时，会明确报告错误，不静默回退到标点切分；正常的静音分段和最大段长仍生效。
+
+本地服务初始化可设置 `server.idle_seconds`，默认 `0` 关闭闲置卸载。llama.cpp 使用 `--sleep-idle-seconds`，audio.cpp 使用 `idle_unload_ms`；再次请求自动加载，但首个请求会增加加载延迟。外部服务需自行设置。需要支持相应功能的服务版本。
+
+对齐会增加额外推理成本，且不能纠正错误转写。首次请求还包含模型加载时间；是否改善实际延迟，需要用自己的音频测量。
+
 ### 分段与识别限制
 
 - 累计约 5 秒后，优先按稳定的句末标点切分，不要求 VAD 静音。同一段连续两次识别文本完全一致，且末尾为句末标点时，允许提交该次识别覆盖的音频，并为下一段保留约 512 ms 音频上下文。异步识别期间新采集的音频也继续保留。
-- 只有文本中间出现句末标点、末尾仍有新句内容时，不据此猜测音频切点；当前接口没有词时间戳，无法按标点位置精确裁剪音频。
+- 未启用强制对齐时，只有文本中间出现句末标点、末尾仍有新句内容时，不据此猜测音频切点；普通转写接口没有词时间戳。
 - 没有可用的标点切分结果时，才使用 VAD 兜底：连续约 480 ms 静音结束一段；累计约 5 秒后，约 320 ms 的停顿也允许提前提交。默认约 15 秒为硬上限。`--partial-interval 0` 禁用中间识别及标点切分，VAD 兜底仍生效。
 - 到达硬上限时，优先在最近约 3 秒寻找至少约 128 ms 的停顿，切点之后的音频继续保留。
 - 没有停顿才硬切，并保留约 512 ms 重叠；较小的最大段长会相应限制重叠长度。只对带重叠的相邻块尝试短文本精确去重，不能保证消除全部重复或区分全部真实重复。
 - 连续两次结果一致的前缀正常显示，未稳定末尾暗色显示，仍允许后续修正。未完句跨块接续，按常见中英文句末标点换行。
-- 没有词时间戳或强制对齐，无法保证切点严格对应完整句子；英文缩写等复杂断句也可能不准确。
+- 未启用强制对齐时，无法保证切点严格对应完整句子；英文缩写等复杂断句即使启用对齐也可能不准确。
 - 最终结果积压超过 16 段会明确报错，不静默丢弃。可关闭中间识别、使用更快的模型或 GPU 来减轻积压。
 
 ## 初始化与持久化配置

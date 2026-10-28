@@ -89,6 +89,9 @@ from wayasr.cli import main
 result = CliRunner().invoke(main, ['live', '--help'])
 assert result.exit_code == 0
 assert '--plain' in result.output
+assert '--aligner-url' not in result.output
+assert '--aligner-model' not in result.output
+assert '--backend' not in result.output
 assert not any(name in sys.modules for name in ('torch', 'numpy', 'silero_vad', 'rich', 'asslayer'))
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

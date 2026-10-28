@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from wayasr import live
-from wayasr.live import AudioSegmenter, TranscriptionWorker
+from wayasr.live import AlignedCut, AudioSegmenter, TranscriptionWorker
 
 
 def test_soft_cut_at_long_pause_after_five_seconds():
@@ -106,14 +106,28 @@ def test_worker_requires_stable_trailing_sentence_end_and_eligible_snapshot(
     client = Mock()
     client.transcribe.side_effect = [first, second]
     worker = TranscriptionWorker(client, view=view)
+    completed = threading.Event()
+    request_cut = worker.request_cut
+
+    def complete_cut(*args):
+        try:
+            request_cut(*args)
+        finally:
+            completed.set()
+
+    worker.request_cut = complete_cut
     try:
         worker.submit(b"aa" * 512 * 156, 0, can_commit=True)
         assert displayed.wait(5)
+        assert completed.wait(5)
         with worker.condition:
             assert worker.take_cut(0) is None
         displayed.clear()
+        completed.clear()
         worker.submit(b"bb" * 512 * 160, second_segment, can_commit=can_commit)
         assert displayed.wait(5)
+        if can_commit:
+            assert completed.wait(5)
         with worker.condition:
             assert worker.take_cut(second_segment) == (160 if expected else None)
     finally:
@@ -144,9 +158,10 @@ def test_finalized_inflight_partial_cannot_request_a_cut():
     assert worker.take_cut(0) is None
 
 
+@pytest.mark.parametrize("aligned", [False, True])
 @pytest.mark.parametrize("silent_chunks", [0, 10])
 @pytest.mark.parametrize("max_segment", [15, 5.12])
-def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, silent_chunks, max_segment):
+def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, silent_chunks, max_segment, aligned):
     numpy = SimpleNamespace(frombuffer=Mock(return_value=MagicMock()), float32="float32")
     torch = SimpleNamespace(set_num_threads=Mock(), from_numpy=Mock())
     vad = Mock()
@@ -157,7 +172,8 @@ def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, si
     client, proc, worker = Mock(url="http://localhost:8087"), Mock(), Mock()
     frames = [index.to_bytes(2, "little") * 512 for index in range(170)]
     proc.stdout.read.side_effect = frames + [b""]
-    worker.take_cut.side_effect = [None] * 159 + [159] + [None] * 10
+    cut = AlignedCut(60, "第一句。") if aligned else 159
+    worker.take_cut.side_effect = [None] * 159 + [cut] + [None] * 10
     monkeypatch.setattr(live, "time", SimpleNamespace(monotonic=lambda: proc.stdout.read.call_count * 0.032))
     monkeypatch.setattr(live, "LlamaASR", lambda *args: client)
     monkeypatch.setattr(live.subprocess, "Popen", lambda *args, **kwargs: proc)
@@ -169,9 +185,11 @@ def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, si
     assert len(calls) == 3
     assert calls[0].args == (b"".join(frames[:159]), 0)
     assert calls[0].kwargs == {"overlap": 0, "can_commit": True}
-    assert calls[1].args == (b"".join(frames[:159]), 0)
-    assert calls[1].kwargs == {"final": True, "overlap": 0, "end": False}
-    assert calls[2].args == (b"".join(frames[143:]), 1)
+    committed = 60 if aligned else 159
+    assert calls[1].args == (b"".join(frames[:committed]), 0)
+    options = {"final_text": "第一句。"} if aligned else {}
+    assert calls[1].kwargs == {"final": True, "overlap": 0, "end": False, **options}
+    assert calls[2].args == (b"".join(frames[committed - 16:]), 1)
     assert calls[2].kwargs == {"final": True, "overlap": 16, "end": True}
     worker.close.assert_called_once()
     proc.terminate.assert_called_once()

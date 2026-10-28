@@ -36,7 +36,7 @@ jobs:
       - run: uv build --no-sources
       - run: uvx twine check dist/*
       - name: Check installed wheel
-        run: uv run --isolated --no-project --with ./dist/*.whl pauscribe --help
+        run: uv run --isolated --no-project --with ./dist/*.whl wayasr --help
       - uses: actions/upload-artifact@v7
         with:
           name: distributions
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/pauscribe
+      url: https://pypi.org/p/wayasr
     permissions:
       id-token: write
     steps:

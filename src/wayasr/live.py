@@ -6,11 +6,17 @@ import subprocess
 import sys
 import threading
 import time
+from typing import NamedTuple
 
 from .client import LlamaASR
 
 
 SENTENCE_BOUNDARY = re.compile(r"[。！？]+[”’\"]*|(?<!\d)[.!?]+[\"']*(?=\s|$)")
+
+
+class AlignedCut(NamedTuple):
+    chunks: int
+    text: str
 
 
 class AudioSegmenter:
@@ -62,8 +68,9 @@ class AudioSegmenter:
     def can_commit(self):
         return len(self.frames) >= self.soft_chunks
 
-    def commit(self, cut):
-        if (not self.soft_chunks <= cut <= len(self.frames)
+    def commit(self, cut, aligned=False):
+        minimum = max(self.overlap + 5, self.overlap_chunks + 1) if aligned else self.soft_chunks
+        if (not minimum <= cut <= len(self.frames)
                 or sum(self.voiced[self.overlap:cut]) < 5):
             return None
         return self._cut(cut, self.overlap_chunks)
@@ -166,8 +173,10 @@ class SubtitleOutput:
 
 
 class TranscriptionWorker:
-    def __init__(self, client, max_pending=16, view=None, overlay=None):
+    def __init__(self, client, max_pending=16, view=None, overlay=None, aligner=None):
         self.client = client
+        self.aligner = aligner
+        self.alignment_attempt = None
         self.finals = queue.Queue(maxsize=max_pending)
         self.partial = None
         self.cuts = queue.SimpleQueue()
@@ -181,15 +190,15 @@ class TranscriptionWorker:
         self.thread = threading.Thread(target=self.run, name="asr-inference")
         self.thread.start()
 
-    def submit(self, audio, segment, final=False, overlap=0, end=True, can_commit=False):
+    def submit(self, audio, segment, final=False, overlap=0, end=True, can_commit=False, final_text=None):
         with self.condition:
             self.segment = segment
             if final:
                 self.partial = None
-                self.finals.put_nowait((audio, segment, overlap, end, can_commit))
+                self.finals.put_nowait((audio, segment, overlap, end, can_commit, final_text))
                 self.finalized_segment = segment
             else:
-                self.partial = (audio, segment, overlap, end, can_commit)
+                self.partial = (audio, segment, overlap, end, can_commit, final_text)
             self.condition.notify()
 
     def take_cut(self, segment):
@@ -201,6 +210,36 @@ class TranscriptionWorker:
             if candidate == segment:
                 return cut
 
+    def request_cut(self, audio, text, segment, previous):
+        if previous is None or previous[0] != segment:
+            return
+        stable = 0
+        for left, right in zip(previous[1], text):
+            if left != right:
+                break
+            stable += 1
+        ends = [match.end() for match in SENTENCE_BOUNDARY.finditer(text) if match.end() <= stable]
+        if not ends:
+            return
+        prefix = text[:ends[-1]]
+        cut = None
+        if self.aligner is not None and self.alignment_attempt != (segment, prefix):
+            self.alignment_attempt = (segment, prefix)
+            try:
+                cut = AlignedCut(self.aligner.cut(audio, text, prefix), prefix)
+            except Exception as error:
+                message = f"Forced alignment failed: {error}"
+                if self.view:
+                    self.view.show_error(message)
+                else:
+                    print(message, file=sys.stderr)
+        if self.aligner is None and cut is None and previous[1] == text and len(prefix) == len(text):
+            cut = len(audio) // 1024
+        if cut is not None:
+            with self.condition:
+                if segment == self.segment and segment > self.finalized_segment and not self.closed:
+                    self.cuts.put((segment, cut))
+
     def run(self):
         try:
             while True:
@@ -209,10 +248,10 @@ class TranscriptionWorker:
                         lambda: self.closed or not self.finals.empty() or self.partial is not None
                     )
                     if not self.finals.empty():
-                        audio, segment, overlap, end, can_commit = self.finals.get_nowait()
+                        audio, segment, overlap, end, can_commit, final_text = self.finals.get_nowait()
                         final = True
                     elif self.partial is not None:
-                        audio, segment, overlap, end, can_commit = self.partial
+                        audio, segment, overlap, end, can_commit, final_text = self.partial
                         self.partial = None
                         final = False
                     else:
@@ -221,20 +260,16 @@ class TranscriptionWorker:
                 if self.view:
                     self.view.set_status("Transcribing")
                 try:
-                    text = self.client.transcribe(audio)
+                    text = final_text if final and final_text is not None else self.client.transcribe(audio)
                     with self.condition:
                         stale = segment != self.segment or segment <= self.finalized_segment or self.closed
                         if final or not stale:
                             self.output.update(text, final, overlap, end)
-                            if final:
-                                self.previous_partial = None
-                            else:
-                                if (can_commit and self.previous_partial == (segment, text)
-                                        and any(match.end() == len(text)
-                                                for match in SENTENCE_BOUNDARY.finditer(text))):
-                                    self.cuts.put((segment, len(audio) // 1024))
-                                self.previous_partial = (segment, text)
-                    if final:
+                            previous = self.previous_partial
+                            self.previous_partial = None if final else (segment, text)
+                    if not final and not stale and can_commit:
+                        self.request_cut(audio, text, segment, previous)
+                    if final and final_text is None:
                         duration = len(audio) / 32000
                         elapsed = time.perf_counter() - started
                         if self.view:
@@ -250,8 +285,14 @@ class TranscriptionWorker:
                     if self.view:
                         self.view.set_status("Finishing" if self.closed else "Listening")
         finally:
-            self.output.flush()
-            self.client.close()
+            try:
+                self.output.flush()
+            finally:
+                try:
+                    self.client.close()
+                finally:
+                    if self.aligner is not None:
+                        self.aligner.close()
 
     def close(self):
         with self.condition:
@@ -264,6 +305,8 @@ class TranscriptionWorker:
 def run(args):
     if args.partial_interval < 0 or not 1 <= args.max_segment <= 25:
         raise ValueError("partial interval must be nonnegative; max segment must be 1–25 seconds")
+    if getattr(args, "aligner_url", None) and (not args.language or not args.partial_interval):
+        raise ValueError("forced alignment requires --language and a positive --partial-interval")
     if not shutil.which("parec"):
         raise ValueError("live capture requires parec (Linux PulseAudio or PipeWire-Pulse)")
 
@@ -289,6 +332,12 @@ def capture(args, overlay=None):
 
         view = ASRView(args.source, args.language, args.url)
     client = LlamaASR(args.url, args.language, args.timeout)
+    client.model = getattr(args, "asr_model", None)
+    aligner = None
+    if getattr(args, "aligner_url", None):
+        from .alignment import ForcedAligner
+
+        aligner = ForcedAligner(args.aligner_url, args.aligner_model, args.language, args.timeout)
     try:
         response = client.session.get(client.url + "/health", timeout=10)
         response.raise_for_status()
@@ -298,17 +347,20 @@ def capture(args, overlay=None):
         ], stdout=subprocess.PIPE)
     except BaseException:
         client.close()
+        if aligner is not None:
+            aligner.close()
         raise
-    worker = TranscriptionWorker(client, view=view, overlay=overlay)
+    worker = TranscriptionWorker(client, view=view, overlay=overlay, aligner=aligner)
     segmenter = AudioSegmenter(int(args.max_segment * 16000 / 512))
     segment = 0
     last_partial = time.monotonic()
 
-    def submit_final(result):
+    def submit_final(result, final_text=None):
         nonlocal segment, last_partial
         if result is not None:
             audio, overlap, end = result
-            worker.submit(audio, segment, final=True, overlap=overlap, end=end)
+            options = {"final_text": final_text} if final_text is not None else {}
+            worker.submit(audio, segment, final=True, overlap=overlap, end=end, **options)
         segment += 1
         last_partial = time.monotonic()
 
@@ -331,13 +383,19 @@ def capture(args, overlay=None):
             voiced = probability >= 0.5
             segmenter.push(raw, voiced, defer_fallback=True)
             cut = worker.take_cut(segment)
-            result = segmenter.commit(cut) if cut is not None else None
+            final_text = None
+            if isinstance(cut, AlignedCut):
+                result = segmenter.commit(cut.chunks, aligned=True)
+                if result is not None:
+                    final_text = cut.text
+            else:
+                result = segmenter.commit(cut) if cut is not None else None
             if result is None:
                 result = segmenter.fallback()
             if view:
                 view.audio(voiced, len(segmenter.frames) * 0.032)
             if result is not None:
-                submit_final(result)
+                submit_final(result, final_text)
             elif (args.partial_interval and sum(segmenter.voiced[segmenter.overlap:]) >= 5
                   and time.monotonic() - last_partial >= args.partial_interval):
                 worker.submit(b"".join(segmenter.frames), segment, overlap=segmenter.overlap,
