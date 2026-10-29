@@ -30,8 +30,11 @@ def test_defaults_can_be_overridden(monkeypatch):
     monkeypatch.setattr(live, "run", lambda args: captured.append(args))
     assert CliRunner().invoke(cli.main, ["live"]).exit_code == 0
     assert captured[-1].url == "http://example.test:9000"
+    assert captured[-1].max_segment == 10.0
     assert CliRunner().invoke(cli.main, ["live", "--url", "http://localhost:8000"]).exit_code == 0
     assert captured[-1].url == "http://localhost:8000"
+    assert CliRunner().invoke(cli.main, ["live", "--max-segment", "12"]).exit_code == 0
+    assert captured[-1].max_segment == 12.0
 
 
 def test_server_cpu_and_visibility_are_scoped_to_child(tmp_path, monkeypatch):

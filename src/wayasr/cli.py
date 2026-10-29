@@ -207,7 +207,7 @@ def transcribe(audio, url, language, timeout, backend, asr_model):
 @click.option("--overlay-font-size", type=click.IntRange(12, 120), default=42, show_default=True)
 @click.option("--overlay-duration", type=click.IntRange(1, 60), default=8, show_default=True, help="Seconds before an unchanged desktop caption expires.")
 @click.option("--partial-interval", type=click.FloatRange(min=0), default=1.0, show_default=True)
-@click.option("--max-segment", type=click.FloatRange(1, 25), default=15.0, show_default=True)
+@click.option("--max-segment", type=click.FloatRange(1, 25), default=10.0, show_default=True)
 @command_errors
 def live(**options):
     """Live Linux system audio or microphone captions."""
