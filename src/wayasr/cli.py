@@ -178,11 +178,10 @@ def serve_command(**options):
 @client_options
 @command_errors
 def transcribe(audio, url, language, timeout):
-    """Transcribe a mono 16 kHz, 16-bit PCM WAV file."""
-    with wave.open(str(audio.expanduser()), "rb") as wav:
-        if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, 16000):
-            raise ValueError("WAV must be mono, 16-bit PCM, 16000 Hz; convert with ffmpeg first")
-        pcm = wav.readframes(wav.getnframes())
+    """Transcribe an audio file; convert channels and sample rate automatically."""
+    from .audio import read_audio
+
+    pcm = read_audio(audio)
     client = LlamaASR(url, language, timeout)
     config = load_config()
     if config.get("backend") == "audio.cpp":

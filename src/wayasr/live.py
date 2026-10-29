@@ -323,11 +323,9 @@ def run(args):
 
 def capture(args, overlay=None):
     import numpy as np
-    import torch
-    from silero_vad import load_silero_vad
+    from .vad import SileroVAD
 
-    torch.set_num_threads(1)
-    vad = load_silero_vad(onnx=True)
+    vad = SileroVAD()
     view = None
     if not args.plain and sys.stdout.isatty():
         from .tui import ASRView
@@ -382,7 +380,7 @@ def capture(args, overlay=None):
                         print("Discarding incomplete audio frame", file=sys.stderr)
                 break
             samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-            probability = float(vad(torch.from_numpy(samples), 16000).item())
+            probability = vad(samples)
             voiced = probability >= 0.5
             segmenter.push(raw, voiced, defer_fallback=True)
             cut = worker.take_cut(segment)

@@ -8,17 +8,17 @@
 
 ## 1. 使用 uv 安装
 
-需要 Python 3.10+；新环境建议 Python 3.12，并确认 PyTorch/ONNX Runtime 有对应平台的安装包。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv。PyPI 上的发行版可直接安装：
+需要 Python 3.10+；新环境建议 Python 3.12，并确认 ONNX Runtime 有对应平台的安装包。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv。PyPI 上的发行版可直接安装：
 
 ```sh
-uv tool install --torch-backend cpu 'wayasr[live]'
+uv tool install 'wayasr[live]'
 uv tool update-shell
 wayasr --help
 ```
 
 `uv tool install` 将命令安装到独立环境，不需要手动创建或激活虚拟环境。如果 shell 尚未包含 uv 的工具目录，请按照 `uv tool update-shell` 提示重新打开终端。需要指定 Python 时可加 `--python 3.12`。
 
-如果只需要文件转写、启动服务或管理 systemd，安装基础版本即可，不需要 PyTorch、VAD 或 Rich：
+如果只需要文件转写、启动服务或管理 systemd，安装基础版本即可，不需要 ONNX Runtime、VAD 或 Rich：
 
 ```sh
 uv tool install wayasr
@@ -29,12 +29,12 @@ uv tool install wayasr
 ```sh
 git clone https://github.com/sitiyou/wayasr.git
 cd wayasr
-uv tool install --torch-backend cpu '.[live]'
+uv tool install '.[live]'
 ```
 
 从源码安装后修改了代码，可在项目目录重新运行安装命令并加 `--force` 更新；卸载使用 `uv tool uninstall wayasr`。工具卸载不会自动卸载 systemd 服务，需要先执行 `wayasr service uninstall`。
 
-实时采集使用 CPU PyTorch 运行 VAD，而 ASR 推理由独立的 llama.cpp 服务处理，无需为 VAD 安装 CUDA/ROCm 版 PyTorch。开发环境的 uv 配置同样优先使用 CPU PyTorch。
+实时采集使用 NumPy 和 ONNX Runtime 在 CPU 上运行 Silero VAD，不依赖 PyTorch 或 torchaudio。固定版本的 ONNX 模型及 MIT 许可证随包附带，无需首次联网下载。ASR 推理由独立的服务处理。
 
 ## 2. 安装 llama.cpp 与下载模型
 
@@ -99,11 +99,10 @@ wayasr serve --server-bin /path/to/llama-server \
 
 ## 4. 文件转写
 
-输入须为 **16 kHz、单声道、16-bit PCM WAV**。可以先用 FFmpeg 转换：
+可直接输入 WAV、FLAC、Ogg、MP3 等 libsndfile 支持的音频格式。工具使用 librosa 自动转为单声道、16 kHz、16-bit PCM，不修改原文件，也不调用 FFmpeg 等外部程序；已符合要求的 WAV 直接读取。格式支持取决于所安装的 libsndfile，AAC/M4A 或视频容器不保证支持。
 
 ```sh
-ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le audio.wav
-wayasr transcribe audio.wav --language Chinese
+wayasr transcribe input.mp3 --language Chinese
 ```
 
 省略 `--language` 自动识别语言。连接其他地址或增加超时：
@@ -112,7 +111,7 @@ wayasr transcribe audio.wav --language Chinese
 wayasr transcribe audio.wav --url http://127.0.0.1:8087 --timeout 120
 ```
 
-当前文件模式将整个 WAV 一次提交；长文件应先分段，支持的最大时长取决于服务和模型。
+当前文件模式将转换后的整段音频一次提交；长文件应先分段，支持的最大时长取决于服务和模型。
 
 ## 5. 实时字幕（Linux）
 
@@ -159,7 +158,7 @@ wayasr live --max-segment 10
 从项目目录安装桌面显示依赖：
 
 ```sh
-uv tool install --force --python 3.14 --torch-backend cpu '.[live,wayland]'
+uv tool install --force --python 3.14 '.[live,wayland]'
 ```
 
 在已登录的 Wayland 图形会话中运行：

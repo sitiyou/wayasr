@@ -12,6 +12,7 @@ dependencies = [
     "beaupy>=4.0.1",
     "click>=8.1",
     "huggingface-hub>=0.24",
+    "librosa>=0.11",
     "platformdirs>=4.12.4",
     "requests>=2.31",
 ]
@@ -21,7 +22,7 @@ Repository = "https://github.com/sitiyou/wayasr"
 Issues = "https://github.com/sitiyou/wayasr/issues"
 
 [project.optional-dependencies]
-live = ["numpy>=1.24", "torch>=2.0", "torchaudio>=2.0", "silero-vad>=6.2", "onnxruntime>=1.16", "rich>=13"]
+live = ["numpy>=1.24", "onnxruntime>=1.16", "rich>=13"]
 wayland = [
     "asslayer>=0.1.0,<0.2.0 ; python_full_version >= '3.14' and sys_platform == 'linux'",
 ]
@@ -38,11 +39,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }
-torchaudio = { index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }
+[tool.setuptools.package-data]
+wayasr = ["data/*.onnx", "data/SILERO_LICENSE", "data/README.txt"]

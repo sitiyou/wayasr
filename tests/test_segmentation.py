@@ -163,12 +163,9 @@ def test_finalized_inflight_partial_cannot_request_a_cut():
 @pytest.mark.parametrize("max_segment", [15, 5.12])
 def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, silent_chunks, max_segment, aligned):
     numpy = SimpleNamespace(frombuffer=Mock(return_value=MagicMock()), float32="float32")
-    torch = SimpleNamespace(set_num_threads=Mock(), from_numpy=Mock())
-    vad = Mock()
-    vad.return_value.item.side_effect = [0.9] * (160 - silent_chunks) + [0.1] * silent_chunks + [0.9] * 10
+    vad = Mock(side_effect=[0.9] * (160 - silent_chunks) + [0.1] * silent_chunks + [0.9] * 10)
     monkeypatch.setitem(sys.modules, "numpy", numpy)
-    monkeypatch.setitem(sys.modules, "torch", torch)
-    monkeypatch.setitem(sys.modules, "silero_vad", SimpleNamespace(load_silero_vad=lambda **kw: vad))
+    monkeypatch.setitem(sys.modules, "wayasr.vad", SimpleNamespace(SileroVAD=lambda: vad))
     client, proc, worker = Mock(url="http://localhost:8087"), Mock(), Mock()
     frames = [index.to_bytes(2, "little") * 512 for index in range(170)]
     proc.stdout.read.side_effect = frames + [b""]
