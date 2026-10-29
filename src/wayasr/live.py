@@ -150,7 +150,7 @@ class SubtitleOutput:
             tail = ""
             if preserve_tail and not end and self.previous.startswith(text):
                 tail = self.previous[len(text):].lstrip()
-            self.previous = ""
+            self.previous = tail
             self.last_final = text
             separator = " " if self.pending and text and self.pending[-1].isascii() and text[0].isascii() else ""
             combined = self.pending + separator + text
@@ -166,12 +166,9 @@ class SubtitleOutput:
                 self.flush()
             else:
                 for view in self.views:
-                    if tail:
-                        view.partial(self.pending, tail)
-                    else:
-                        view.partial(self.pending)
+                    view.partial(self.pending + tail)
                 if not self.view:
-                    sys.stdout.write(self.pending + ("\033[2m" + tail + "\033[0m" if tail else ""))
+                    sys.stdout.write(self.pending + tail)
         if not self.view:
             sys.stdout.flush()
 
@@ -301,8 +298,6 @@ class TranscriptionWorker:
                         elapsed = time.perf_counter() - started
                         if self.view:
                             self.view.metrics(duration, elapsed, self.finals.qsize())
-                        else:
-                            print(f"[ASR] audio={duration:.2f}s inference={elapsed:.2f}s RTF={elapsed / duration:.3f}", file=sys.stderr)
                 except Exception as error:
                     if self.view:
                         self.view.show_error(error)

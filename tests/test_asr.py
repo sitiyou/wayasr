@@ -227,10 +227,10 @@ def test_aligned_sentence_preserves_unconfirmed_tail_until_next_recognition():
     output.update("第一句。", final=True, end=False, preserve_tail=True)
     for sink in (view, overlay):
         sink.sentence.assert_called_once_with("第一句。")
-        sink.partial.assert_called_with("", "第二句还在说")
+        sink.partial.assert_called_with("第二句还在说")
     assert output.pending == ""
     output.update("第二句换了说法")
-    view.partial.assert_called_with("", "第二句换了说法")
+    view.partial.assert_called_with("第二句", "换了说法")
     output.update("第二句说完了。", final=True)
     assert [call.args[0] for call in view.sentence.call_args_list] == ["第一句。", "第二句说完了。"]
     view.partial.assert_called_with("")
@@ -259,7 +259,20 @@ def test_aligned_tail_survives_overlap_deduplication():
     output.update("建筑制作文章提到了。", final=True, end=False,
                   overlap=16, preserve_tail=True)
     view.sentence.assert_called_with("文章提到了。")
-    view.partial.assert_called_with("", "后文还在说")
+    view.partial.assert_called_with("后文还在说")
+    output.update("后文还在说然后继续")
+    view.partial.assert_called_with("后文还在说", "然后继续")
+
+
+def test_plain_mode_does_not_print_asr_metrics(capsys):
+    client = Mock()
+    client.transcribe.return_value = "识别结果。"
+    worker = TranscriptionWorker(client)
+    worker.submit(b"aa" * 512 * 31, 0, final=True)
+    worker.close()
+    captured = capsys.readouterr()
+    assert "识别结果。" in captured.out
+    assert captured.err == ""
 
 
 def test_inflight_partial_is_not_displayed_after_finalization(capsys):

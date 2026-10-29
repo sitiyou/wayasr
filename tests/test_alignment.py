@@ -235,7 +235,7 @@ def test_worker_preserves_partial_tail_when_committing_aligned_text():
     worker.close()
     client.transcribe.assert_not_called()
     view.sentence.assert_called_once_with("第一句。")
-    assert any(call.args == ("", "后面的临时文字") for call in view.partial.call_args_list)
+    assert any(call.args == ("后面的临时文字",) for call in view.partial.call_args_list)
 
 
 def test_aligned_final_uses_stable_text_without_retranscribing_audio():
