@@ -39,9 +39,19 @@ def load_config():
             raise ValueError(f"Expected a {name} object at {path}")
     if config.get("backend", "llama.cpp") not in ("llama.cpp", "audio.cpp"):
         raise ValueError(f"Expected backend llama.cpp or audio.cpp at {path}")
+    if config.get("connection", "local") not in ("local", "remote"):
+        raise ValueError(f"Expected connection local or remote at {path}")
+    for name in ("asr_model", "aligner_model"):
+        value = config.get("client", {}).get(name)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"Expected nonempty {name} at {path}")
     idle = config.get("server", {}).get("idle_seconds", 0)
     if not isinstance(idle, int) or isinstance(idle, bool) or idle < 0:
         raise ValueError(f"Expected nonnegative idle_seconds at {path}")
+    config.setdefault("connection", "local" if "server" in config or "url" not in config else "remote")
+    for name in ("asr_model", "aligner_model"):
+        if name not in config.get("client", {}) and name in config.get("server", {}):
+            config.setdefault("client", {})[name] = config["server"][name]
     return config
 
 

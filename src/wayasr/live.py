@@ -8,7 +8,7 @@ import threading
 import time
 from typing import NamedTuple
 
-from .client import LlamaASR
+from .client import create_client
 
 
 SENTENCE_BOUNDARY = re.compile(r"[。！？]+[”’\"]*|(?<!\d)[.!?]+[\"']*(?=\s|$)")
@@ -331,8 +331,8 @@ def capture(args, overlay=None):
         from .tui import ASRView
 
         view = ASRView(args.source, args.language, args.url)
-    client = LlamaASR(args.url, args.language, args.timeout)
-    client.model = getattr(args, "asr_model", None)
+    client = create_client(getattr(args, "backend", "llama.cpp"), args.url, args.language, args.timeout,
+                           getattr(args, "asr_model", None))
     client.detect_language = bool(getattr(args, "aligner_url", None) and not args.language)
     aligner = None
     if getattr(args, "aligner_url", None):

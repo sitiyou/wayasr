@@ -11,7 +11,7 @@ import wave
 import click
 import requests
 
-from .client import LlamaASR
+from .client import create_client
 from .config import config_path, default_model_dir, load_config, save_config, server_config
 
 
@@ -39,6 +39,8 @@ def server_options(command):
 def client_options(command):
     for option in reversed([
         click.option("--url", default="http://127.0.0.1:8087", envvar="WAYASR_URL", show_default=True),
+        click.option("--backend", type=click.Choice(["llama.cpp", "audio.cpp"]), default="llama.cpp", show_default=True),
+        click.option("--asr-model", help="Server-side ASR model ID."),
         click.option("--language", help="Omit to detect the language automatically."),
         click.option("--timeout", type=click.FloatRange(min=0, min_open=True), default=120, show_default=True),
     ]):
@@ -75,12 +77,19 @@ def resolve_audio_model(model, *, aligner=False):
         "Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf"
         if aligner else "Qwen3-ASR-1.7B-GGUF/qwen3-asr-1.7b-q8_0.gguf"
     )
-    return hf_hub_download(repo_id="audio-cpp/audio.cpp-gguf", filename=filename)
+    model_dir = default_model_dir() / "audio.cpp"
+    model_path = model_dir / filename
+    if model_path.is_file():
+        return str(model_path)
+    return hf_hub_download(repo_id="audio-cpp/audio.cpp-gguf", filename=filename,
+                           local_dir=model_dir)
 
 
 def server_command(args):
     config = load_config()
-    settings = config.get("server", {})
+    if config.get("connection") == "remote":
+        raise ValueError("Remote connection configured; select a local service with 'wayasr config init' first")
+    settings = {**config.get("server", {}), **config.get("client", {})}
     if config.get("backend", "llama.cpp") == "audio.cpp":
         import json
         from .config import write_text_atomic
@@ -96,10 +105,10 @@ def server_command(args):
             default = AUDIO_ASR_MODEL if name == "asr_path" else AUDIO_ALIGNER_MODEL
             settings[name] = resolve_audio_model(settings.get(name) or default, aligner=name == "aligner_path")
         models = [{"id": settings.get("asr_model", "qwen3-asr"), "family": "qwen3_asr",
-                   "path": str(Path(settings["asr_path"]).expanduser().resolve()), "task": "asr", "mode": "offline"}]
+                   "path": str(Path(settings["asr_path"]).expanduser().absolute()), "task": "asr", "mode": "offline"}]
         if config.get("live", {}).get("fa", True):
             models.append({"id": settings.get("aligner_model", "qwen3-align"), "family": "qwen3_forced_aligner",
-                           "path": str(Path(settings["aligner_path"]).expanduser().resolve()), "task": "align", "mode": "offline"})
+                           "path": str(Path(settings["aligner_path"]).expanduser().absolute()), "task": "align", "mode": "offline"})
         for model in models:
             if not Path(model["path"]).exists():
                 raise ValueError(f"model file not found: {model['path']}")
@@ -155,6 +164,7 @@ def main(ctx):
     server = {key: value for key, value in config.get("server", {}).items() if key != "clear_device_visibility"}
     live_defaults = {key: value for key, value in config.get("live", {}).items()
                      if key not in ("language", "source", "overlay", "aligner_url", "aligner_model")}
+    client["backend"] = config.get("backend", "llama.cpp")
     if "url" in config:
         client["url"] = config["url"]
     ctx.default_map = {
@@ -177,15 +187,12 @@ def serve_command(**options):
 @click.argument("audio", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @client_options
 @command_errors
-def transcribe(audio, url, language, timeout):
+def transcribe(audio, url, language, timeout, backend, asr_model):
     """Transcribe an audio file; convert channels and sample rate automatically."""
     from .audio import read_audio
 
     pcm = read_audio(audio)
-    client = LlamaASR(url, language, timeout)
-    config = load_config()
-    if config.get("backend") == "audio.cpp":
-        client.model = config.get("server", {}).get("asr_model", "qwen3-asr")
+    client = create_client(backend, url, language, timeout, asr_model)
     try:
         click.echo(client.transcribe(pcm))
     finally:
@@ -207,10 +214,10 @@ def live(**options):
     from .live import run
 
     config = load_config()
-    settings = config.get("server", {})
-    if config.get("backend") == "audio.cpp":
-        options["asr_model"] = settings.get("asr_model", "qwen3-asr")
-        if config.get("live", {}).get("fa", True):
+    settings = config.get("client", {})
+    if options["backend"] == "audio.cpp":
+        options["asr_model"] = options["asr_model"] or "qwen3-asr"
+        if config.get("live", {}).get("fa", config.get("connection") == "local"):
             options["aligner_url"] = options["url"]
             options["aligner_model"] = settings.get("aligner_model", "qwen3-align")
     run(SimpleNamespace(**options))
@@ -290,13 +297,19 @@ def init_config(ctx):
     path = config_path()
     if path.exists():
         confirm("Update configuration?", default=True, abort=True)
-    custom = "Custom URL"
-    choices = ["llama.cpp", "audio.cpp", custom]
-    default = previous.get("backend", custom if previous.get("url") else "llama.cpp")
-    backend = select_option("Service", choices, default)
-    config = {}
-    if backend == custom:
+    local, remote = "Local service", "Remote address"
+    connection = select_option("Connection", [local, remote], remote if previous.get("connection") == "remote" else local)
+    backend = select_option("Backend", ["llama.cpp", "audio.cpp"], previous.get("backend", "llama.cpp"))
+    config = {"connection": "local" if connection == local else "remote", "backend": backend}
+    if connection == remote:
         config["url"] = click.prompt("Service URL", default=previous.get("url", "http://127.0.0.1:8087"))
+        if backend == "audio.cpp":
+            saved_client = previous.get("client", {})
+            config["client"] = {"asr_model": click.prompt("ASR model ID", default=saved_client.get("asr_model", "qwen3-asr"))}
+            fa = confirm("Enable forced alignment?", default=False)
+            config["live"] = {"fa": fa}
+            if fa:
+                config["client"]["aligner_model"] = click.prompt("Alignment model ID", default=saved_client.get("aligner_model", "qwen3-align"))
     else:
         saved = previous.get("server", {}) if previous.get("backend", "llama.cpp") == backend else {}
         with serve_command.make_context("serve", [], parent=ctx.find_root(), default_map=saved) as server_ctx:
@@ -326,12 +339,17 @@ def init_config(ctx):
         config["backend"] = backend
         config["server"].update(settings)
         config["server"]["idle_seconds"] = saved.get("idle_seconds", 180)
+        if backend == "audio.cpp":
+            saved_client = previous.get("client", {})
+            config["client"] = {"asr_model": saved_client.get("asr_model", "qwen3-asr")}
+            if fa:
+                config["client"]["aligner_model"] = saved_client.get("aligner_model", "qwen3-align")
     click.echo(f"Service: {config['url']}")
     click.echo(f"Save to {path}")
     if not confirm("Save configuration?", default=True):
         raise click.Abort()
     save_config(config)
-    if backend == custom:
+    if connection == remote:
         click.echo("Saved. Ready to transcribe.")
     else:
         click.echo("Saved. Run 'wayasr service install' to start the service.")
@@ -359,6 +377,8 @@ def install_service(**options):
     """Install, enable, and start (or restart) the user service."""
     from .service import manage
 
+    if load_config().get("connection") == "remote":
+        raise ValueError("Remote connection configured; select a local service with 'wayasr config init' first")
     manage(SimpleNamespace(action="install", **options))
 
 

@@ -5,12 +5,12 @@ from unittest.mock import Mock
 from click.testing import CliRunner
 
 from wayasr import cli
-from wayasr.client import LlamaASR
+from wayasr.client import AudioCppASR
 from wayasr.config import config_path, load_config, save_config, save_server_config
 
 
 def test_audio_client_sends_model():
-    client = LlamaASR(model="qwen3-asr")
+    client = AudioCppASR(model="qwen3-asr")
     client.session = Mock()
     client.session.post.return_value.json.return_value = {"text": "hello"}
     assert client.transcribe(b"aa") == "hello"
@@ -18,8 +18,10 @@ def test_audio_client_sends_model():
 
 
 def test_audio_server_and_idle_unload(monkeypatch, tmp_path):
+    blob = tmp_path / "blob"
+    blob.touch()
     model = tmp_path / "model.gguf"
-    model.touch()
+    model.symlink_to(blob)
     settings = {"asr_path": str(model), "aligner_path": str(model), "idle_seconds": 60}
     save_config({"backend": "audio.cpp", "server": settings, "live": {"fa": True}})
     monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/audiocpp_server")
@@ -27,6 +29,7 @@ def test_audio_server_and_idle_unload(monkeypatch, tmp_path):
     command = cli.server_command(args)
     assert command == ["/usr/bin/audiocpp_server", "--config", str(config_path().with_name("audio-server.json"))]
     generated = json.loads(config_path().with_name("audio-server.json").read_text())
+    assert [entry["path"] for entry in generated["models"]] == [str(model), str(model)]
     assert generated["idle_unload_ms"] == 60000
     assert [model["task"] for model in generated["models"]] == ["asr", "align"]
     save_config({"backend": "audio.cpp", "server": settings, "live": {"fa": False}})
@@ -51,7 +54,7 @@ def test_local_audio_initialization(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     model = tmp_path / "model.gguf"
     model.touch()
-    answers = ["audio.cpp", "", "Local file", str(model), "y", "Local file", str(model), "CPU", "", "y"]
+    answers = ["Local service", "audio.cpp", "", "Local file", str(model), "y", "Local file", str(model), "CPU", "", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     settings = load_config()["server"]
@@ -62,11 +65,12 @@ def test_local_audio_initialization(monkeypatch, tmp_path):
 
 
 def test_external_audio_initialization():
-    answers = ["Custom URL", "http://audio:8080", "y"]
+    answers = ["Remote address", "audio.cpp", "http://audio:8080", "custom-asr", "n", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     config = load_config()
-    assert config == {"url": "http://audio:8080"}
+    assert config == {"connection": "remote", "backend": "audio.cpp", "url": "http://audio:8080",
+                      "client": {"asr_model": "custom-asr"}, "live": {"fa": False}}
 
 
 def test_live_audio_uses_shared_url(monkeypatch):

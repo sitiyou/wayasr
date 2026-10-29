@@ -72,10 +72,10 @@ def test_wav_transcription_passes_options(tmp_path, monkeypatch):
     client = Mock()
     client.transcribe.return_value = "你好"
     factory = Mock(return_value=client)
-    monkeypatch.setattr(cli, "LlamaASR", factory)
+    monkeypatch.setattr(cli, "create_client", factory)
     result = CliRunner().invoke(cli.main, ["transcribe", str(audio), "--language", "Chinese", "--timeout", "30"])
     assert result.exit_code == 0, result.output
-    factory.assert_called_once_with("http://127.0.0.1:8087", "Chinese", 30)
+    factory.assert_called_once_with("llama.cpp", "http://127.0.0.1:8087", "Chinese", 30, None)
     client.transcribe.assert_called_once_with(pcm)
     client.close.assert_called_once()
     assert result.output == "你好\n"
@@ -91,7 +91,7 @@ assert result.exit_code == 0
 assert '--plain' in result.output
 assert '--aligner-url' not in result.output
 assert '--aligner-model' not in result.output
-assert '--backend' not in result.output
+assert '--backend' in result.output
 assert not any(name in sys.modules for name in ('torch', 'numpy', 'silero_vad', 'rich', 'asslayer'))
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

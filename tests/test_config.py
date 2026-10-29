@@ -29,7 +29,7 @@ def test_client_default_precedence(monkeypatch):
     client = Mock()
     client.transcribe.return_value = "text"
     factory = Mock(return_value=client)
-    monkeypatch.setattr(cli, "LlamaASR", factory)
+    monkeypatch.setattr(cli, "create_client", factory)
     import wave
 
     audio = config.config_path().parent / "audio.wav"
@@ -39,7 +39,7 @@ def test_client_default_precedence(monkeypatch):
     monkeypatch.delenv("WAYASR_URL")
     result = runner.invoke(cli.main, ["transcribe", str(audio)])
     assert result.exit_code == 0, result.output
-    factory.assert_called_once_with("http://localhost:9000", None, 120)
+    factory.assert_called_once_with("llama.cpp", "http://localhost:9000", None, 120, None)
 
 
 def test_saved_server_defaults_and_explicit_override(monkeypatch):
@@ -60,7 +60,7 @@ def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     models = tmp_path / "model directory"
     monkeypatch.setattr(cli, "available_devices", lambda *args: {"CPU": "none"})
-    answers = ["llama.cpp", "llama-server", str(models), "CPU", "9000", "y"]
+    answers = ["Local service", "llama.cpp", "llama-server", str(models), "CPU", "9000", "y"]
     runner = CliRunner()
     result = runner.invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
@@ -84,12 +84,12 @@ def test_init_existing_api_skips_server_setup(monkeypatch, existing):
     if existing:
         config.save_config(existing)
     monkeypatch.setattr(cli.shutil, "which", Mock(side_effect=AssertionError("Must not resolve a local server")))
-    answers = (["y"] if existing else []) + ["Custom URL", "https://asr.example.test", "y"]
+    answers = (["y"] if existing else []) + ["Remote address", "llama.cpp", "https://asr.example.test", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     saved = config.load_config()
     assert saved["url"] == "https://asr.example.test"
-    assert saved == {"url": "https://asr.example.test"}
+    assert saved == {"connection": "remote", "backend": "llama.cpp", "url": "https://asr.example.test"}
     assert "Model directory" not in result.output
     assert "service install" not in result.output
     assert "Ready to transcribe" in result.output
@@ -106,17 +106,17 @@ def test_init_abort_keeps_previous_config():
 def test_reinitialization_preserves_remote_url_and_can_cancel():
     config.save_config({"url": "https://remote.example.test:9000"})
     runner = CliRunner()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nCustom URL\n\ny\n")
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nRemote address\nllama.cpp\n\ny\n")
     assert result.exit_code == 0, result.output
     assert config.load_config()["url"] == "https://remote.example.test:9000"
     before = config.config_path().read_bytes()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nCustom URL\n\nn\n")
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nRemote address\nllama.cpp\n\nn\n")
     assert result.exit_code != 0
     assert config.config_path().read_bytes() == before
 
 
 def test_init_cancel_does_not_save():
-    result = CliRunner().invoke(cli.main, ["config", "init"], input="Custom URL\nhttp://remote\nn\n")
+    result = CliRunner().invoke(cli.main, ["config", "init"], input="Remote address\nllama.cpp\nhttp://remote\nn\n")
     assert result.exit_code != 0
     assert not config.config_path().exists()
 

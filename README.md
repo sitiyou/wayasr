@@ -179,9 +179,9 @@ wayasr live --overlay --overlay-font-size 48 --overlay-duration 10
 
 ### 可选 GGUF 强制对齐（实验）
 
-`wayasr config init` 可选择 llama.cpp 或 [audio.cpp](https://github.com/0xShug0/audio.cpp)。llama.cpp 使用原有的标点/VAD 分段；audio.cpp 在同一个服务中运行 ASR 和可选的 Qwen3-ForcedAligner。初始化默认启用 FA，也可关闭；不支持混合两个后端。运行时自动读取服务 URL 和 FA 开关，模型 ID 由程序管理。
+`wayasr config init` 可选择 llama.cpp 或 [audio.cpp](https://github.com/0xShug0/audio.cpp)。llama.cpp 使用原有的标点/VAD 分段；audio.cpp 在同一个服务中运行 ASR 和可选的 Qwen3-ForcedAligner。本地初始化默认启用 FA，也可关闭；远程初始化默认关闭 FA。不支持混合两个后端。运行时自动读取服务 URL、模型 ID 和 FA 开关。
 
-安装支持 `qwen3_forced_aligner` 的 `audiocpp_server`。ASR 和 FA 模型通过菜单选择预设模型或本地模型，首次启动服务会从 `audio-cpp/audio.cpp-gguf` 自动下载默认的 Qwen3-ASR-1.7B Q8_0，以及启用 FA 时的 Qwen3-ForcedAligner-0.6B Q8_0，复用 Hugging Face 缓存；后续启动无需重复下载。可通过 `HF_ENDPOINT` 设置镜像。`config init` 仅保存配置，不下载模型。
+安装支持 `qwen3_forced_aligner` 的 `audiocpp_server`。ASR 和 FA 模型通过菜单选择预设模型或本地模型，首次启动服务会从 `audio-cpp/audio.cpp-gguf` 自动下载默认的 Qwen3-ASR-1.7B Q8_0，以及启用 FA 时的 Qwen3-ForcedAligner-0.6B Q8_0，保存到本地模型目录的 `audio.cpp` 子目录；后续启动无需重复下载。可通过 `HF_ENDPOINT` 设置镜像。`config init` 仅保存配置，不下载模型。
 
 也可预先下载 **audio.cpp 原生格式**的 GGUF，并在初始化时填写本地绝对路径；llama.cpp 的 GGUF 不保证兼容。例如手动下载 FA 模型：
 
@@ -219,7 +219,7 @@ HF_ENDPOINT=https://hf-mirror.com uvx --from huggingface-hub hf download \
 }
 ```
 
-外部服务启动后，初始化选择 `Custom URL`，填写服务根地址，仅使用转录功能；本地 audio.cpp 服务支持自动对齐，可用 `wayasr serve` 或 `wayasr service install` 管理：
+外部服务启动后，初始化选择 `Remote address` 和 `audio.cpp`，填写服务根地址及 ASR 模型 ID；如服务部署了对齐模型，也可启用 FA 并填写对齐模型 ID。本地 audio.cpp 服务可用 `wayasr serve` 或 `wayasr service install` 管理：
 
 ```bash
 audiocpp_server --config server.json --no-ui
@@ -252,9 +252,9 @@ wayasr config init
 wayasr config show
 ```
 
-`config init` 首先选择 `llama.cpp`、`audio.cpp` 或 `Custom URL`。本地服务只配置程序、模型、设备和端口，固定监听本机，自动保存唯一的服务 URL；audio.cpp 还可选择是否启用 FA。`Custom URL` 只填写已有服务的根地址，无需本地程序或模型。语言默认自动检测，音源默认使用系统监听源，桌面字幕默认关闭，均在运行时通过 CLI 覆盖，不持久化。重新初始化会清理旧字段及不适用的服务设置；取消不会覆盖文件。初始化不下载模型、不安装或重启服务。模型目录保存为绝对路径。
+`config init` 首先选择 `Local service` 或 `Remote address`，再选择 `llama.cpp` 或 `audio.cpp` 后端。本地服务只配置程序、模型、设备和端口，固定监听 `127.0.0.1`，不询问地址，自动保存服务 URL；audio.cpp 还可选择是否启用 FA。远程模式填写已有服务的根地址，无需本地程序或模型；audio.cpp 还需填写 ASR 模型 ID，并可选启用 FA（默认关闭）。语言默认自动检测，音源默认使用系统监听源，桌面字幕默认关闭，均在运行时通过 CLI 覆盖，不持久化。重新初始化会清理旧字段及不适用的服务设置；取消不会覆盖文件。初始化不下载模型、不安装或重启服务。模型目录保存为绝对路径。
 
-已有 API 的 URL 应填写服务根地址（例如 `https://asr.example.com`），不要包含 `/v1/audio/transcriptions`；客户端会自动追加该路径。服务须兼容当前客户端的 WAV multipart 上传及 JSON `text` 响应；目前不提供 API Key 或自定义模型参数配置。
+已有 API 的 URL 应填写服务根地址（例如 `https://asr.example.com`），不要包含 `/v1/audio/transcriptions`；客户端会自动追加该路径。服务须兼容当前客户端的 WAV multipart 上传及 JSON `text` 响应；可通过 `--backend` 和 `--asr-model` 覆盖后端及模型 ID，`--url` 仅覆盖地址，不改变后端。目前不提供 API Key 配置。
 
 目录由 `platformdirs` 按当前平台管理。Linux 默认使用：
 

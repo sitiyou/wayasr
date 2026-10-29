@@ -5,7 +5,7 @@ from click.testing import CliRunner
 import pytest
 
 from wayasr import cli, config, live
-from wayasr.client import LlamaASR
+from wayasr.client import AudioCppASR
 from wayasr.live import TranscriptionWorker
 
 
@@ -13,7 +13,7 @@ from wayasr.live import TranscriptionWorker
 def test_audio_init_only_asks_for_selected_models(monkeypatch, fa):
     monkeypatch.setattr(cli, "available_devices", lambda *args: {"GPU": ("cuda", 1)})
     monkeypatch.setattr(cli.shutil, "which", lambda name: None)
-    answers = ["audio.cpp", "", "", "y" if fa else "n"]
+    answers = ["Local service", "audio.cpp", "", "", "y" if fa else "n"]
     if fa:
         answers.append("")
     answers += ["GPU", "", "y"]
@@ -26,16 +26,16 @@ def test_audio_init_only_asks_for_selected_models(monkeypatch, fa):
     assert saved["server"]["idle_seconds"] == 180
     assert ("aligner_path" in saved["server"]) is fa
     assert saved["live"] == {"fa": fa}
-    for prompt in ("model ID", "Language", "Live audio source", "Listen address", "Client service URL", "Idle unload", "Wayland"):
+    for prompt in ("model ID", "Language", "Live audio source", "Listen address", "Client service URL", "Service URL", "Idle unload", "Wayland"):
         assert prompt not in result.output
 
 
 def test_custom_route_removes_old_defaults():
     config.save_config({"backend": "audio.cpp", "url": "http://old", "server": {"clear_device_visibility": True},
                         "client": {"language": "Chinese"}, "live": {"fa": True, "source": "old", "overlay": True}})
-    result = CliRunner().invoke(cli.main, ["config", "init"], input="y\nCustom URL\nhttp://new\ny\n")
+    result = CliRunner().invoke(cli.main, ["config", "init"], input="y\nRemote address\nllama.cpp\nhttp://new\ny\n")
     assert result.exit_code == 0, result.output
-    assert config.load_config() == {"url": "http://new"}
+    assert config.load_config() == {"connection": "remote", "backend": "llama.cpp", "url": "http://new"}
 
 
 def test_runtime_ignores_old_defaults_and_accepts_overrides(monkeypatch):
@@ -54,7 +54,7 @@ def test_runtime_ignores_old_defaults_and_accepts_overrides(monkeypatch):
 
 
 def test_asr_returns_detected_language_for_alignment():
-    client = LlamaASR("http://audio")
+    client = AudioCppASR("http://audio", model="qwen3-asr")
     client.detect_language = True
     client.session = Mock()
     client.session.post.return_value.json.return_value = {"text": "hello", "language": "English"}

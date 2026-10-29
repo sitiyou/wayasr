@@ -11,7 +11,7 @@ from wayasr import cli, config
 @pytest.mark.parametrize("backend", ["llama.cpp", "audio.cpp"])
 def test_terminal_backend_selection(monkeypatch, backend):
     config.save_config({"backend": backend, "url": "http://localhost:9000"})
-    select = Mock(side_effect=lambda options, **kwargs: backend if kwargs["title"] == "Service" else options[0])
+    select = Mock(side_effect=lambda options, **kwargs: backend if kwargs["title"] == "Backend" else options[0])
     monkeypatch.setattr(cli, "available_devices", lambda *args: {"CPU": "none" if backend == "llama.cpp" else ("cpu", 0)})
     monkeypatch.setattr(beaupy, "select", select)
     monkeypatch.setattr(beaupy, "confirm", Mock(side_effect=[True] + ([False] if backend == "audio.cpp" else []) + [True]))
@@ -19,8 +19,10 @@ def test_terminal_backend_selection(monkeypatch, backend):
     with runner.isolation(input="\n\n\n"):
         monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
         cli.main.main(args=["config", "init"], standalone_mode=False)
-    assert select.call_args_list[0].args == (["llama.cpp", "audio.cpp", "Custom URL"],)
-    assert select.call_args_list[0].kwargs == {"title": "Service", "cursor_index": ["llama.cpp", "audio.cpp"].index(backend)}
+    assert select.call_args_list[0].args == (["Local service", "Remote address"],)
+    assert select.call_args_list[0].kwargs == {"title": "Connection", "cursor_index": 1}
+    assert select.call_args_list[1].args == (["llama.cpp", "audio.cpp"],)
+    assert select.call_args_list[1].kwargs == {"title": "Backend", "cursor_index": ["llama.cpp", "audio.cpp"].index(backend)}
     assert config.load_config()["backend"] == backend
 
 

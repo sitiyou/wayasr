@@ -12,7 +12,7 @@ from wayasr.config import config_path, load_config, save_config
 
 
 @pytest.mark.parametrize("fa", [False, True])
-def test_default_audio_models_use_hub_cache(monkeypatch, tmp_path, fa):
+def test_default_audio_models_use_local_directory(monkeypatch, tmp_path, fa):
     model = tmp_path / "cached.gguf"
     model.touch()
     download = Mock(return_value=str(model))
@@ -25,12 +25,30 @@ def test_default_audio_models_use_hub_cache(monkeypatch, tmp_path, fa):
     if fa:
         filenames.append("Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf")
     assert download.call_args_list == [
-        call(repo_id="audio-cpp/audio.cpp-gguf", filename=filename)
+        call(repo_id="audio-cpp/audio.cpp-gguf", filename=filename,
+             local_dir=cli.default_model_dir() / "audio.cpp")
         for filename in filenames
     ]
     generated = json.loads(config_path().with_name("audio-server.json").read_text())
     assert [entry["path"] for entry in generated["models"]] == [str(model)] * len(filenames)
     assert "server" not in load_config()
+
+
+@pytest.mark.parametrize("aligner", [False, True])
+def test_existing_preset_skips_download(monkeypatch, tmp_path, aligner):
+    monkeypatch.setattr(cli, "default_model_dir", lambda: tmp_path)
+    filename = (
+        "Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf"
+        if aligner else "Qwen3-ASR-1.7B-GGUF/qwen3-asr-1.7b-q8_0.gguf"
+    )
+    model = tmp_path / "audio.cpp" / filename
+    model.parent.mkdir(parents=True)
+    model.touch()
+    download = Mock(side_effect=AssertionError("Must use the existing model"))
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    preset = cli.AUDIO_ALIGNER_MODEL if aligner else cli.AUDIO_ASR_MODEL
+    assert cli.resolve_audio_model(preset, aligner=aligner) == str(model)
+    download.assert_not_called()
 
 
 def test_unknown_model_is_rejected():

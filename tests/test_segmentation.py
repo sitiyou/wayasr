@@ -172,7 +172,7 @@ def test_capture_prioritizes_punctuation_over_vad_and_hard_limit(monkeypatch, si
     cut = AlignedCut(60, "第一句。") if aligned else 159
     worker.take_cut.side_effect = [None] * 159 + [cut] + [None] * 10
     monkeypatch.setattr(live, "time", SimpleNamespace(monotonic=lambda: proc.stdout.read.call_count * 0.032))
-    monkeypatch.setattr(live, "LlamaASR", lambda *args: client)
+    monkeypatch.setattr(live, "create_client", lambda *args: client)
     monkeypatch.setattr(live.subprocess, "Popen", lambda *args, **kwargs: proc)
     monkeypatch.setattr(live, "TranscriptionWorker", lambda *args, **kwargs: worker)
     args = SimpleNamespace(plain=True, url="http://localhost:8087", language=None,
