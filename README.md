@@ -91,7 +91,7 @@ wayasr live --overlay
 wayasr live --overlay --plain --overlay-font-size 48 --overlay-duration 10
 ```
 
-The optional `asslayer` integration displays bottom-centered captions alongside terminal output. Desktop subtitles are off by default; unchanged captions expire after 8 seconds. Run inside an active Wayland session.
+The optional `asslayer` integration displays bottom-centered live captions. With `--overlay`, the terminal prints only completed subtitle lines: no Rich interface or dynamic text updates. Desktop subtitles are off by default; unchanged captions expire after 8 seconds. Run inside an active Wayland session.
 
 ## Transcribe a file
 

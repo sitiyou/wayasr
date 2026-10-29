@@ -143,8 +143,47 @@ def test_worker_sends_final_to_overlay_and_keeps_terminal_output(capsys):
     worker.submit(b"\x00\x00" * 512, 0, final=True)
     worker.close()
     desktop.sentence.assert_called_once_with("最终结果。")
-    assert "最终结果。" in capsys.readouterr().out
+    assert capsys.readouterr().out == "最终结果。\n"
     client.close.assert_called_once()
+
+
+def test_overlay_prints_only_completed_lines(capsys):
+    desktop = Mock()
+    output = live.SubtitleOutput(overlay=desktop)
+    output.update("第一句。后文")
+    output.update("第一句。后文还在说")
+    assert capsys.readouterr().out == ""
+    desktop.partial.assert_called_with("第一句。后文", "还在说")
+    output.update("第一句。", final=True, end=False, preserve_tail=True)
+    assert capsys.readouterr().out == "第一句。\n"
+    desktop.partial.assert_called_with("后文还在说")
+    output.update("后文还在说话")
+    assert capsys.readouterr().out == ""
+    output.update("后文说完了。尚未结束", final=True, end=False)
+    assert capsys.readouterr().out == "后文说完了。\n"
+    output.flush()
+    assert capsys.readouterr().out == "尚未结束\n"
+
+
+def test_overlay_capture_skips_tui_even_on_a_terminal(monkeypatch):
+    monkeypatch.setitem(sys.modules, "numpy", Mock())
+    monkeypatch.setitem(sys.modules, "wayasr.vad", SimpleNamespace(SileroVAD=Mock()))
+    monkeypatch.setattr(live.sys.stdout, "isatty", lambda: True)
+    factory = Mock(side_effect=AssertionError("Overlay must not start the TUI"))
+    monkeypatch.setitem(sys.modules, "wayasr.tui", SimpleNamespace(ASRView=factory))
+    client, proc, worker = Mock(url="http://localhost:8087"), Mock(), Mock()
+    proc.stdout.read.return_value = b""
+    monkeypatch.setattr(live, "create_client", lambda *args: client)
+    monkeypatch.setattr(live.subprocess, "Popen", lambda *args, **kwargs: proc)
+    worker_factory = Mock(return_value=worker)
+    monkeypatch.setattr(live, "TranscriptionWorker", worker_factory)
+    desktop = Mock()
+    args = SimpleNamespace(plain=False, url="http://localhost:8087", language=None,
+                           timeout=120, source="test-source", max_segment=10, partial_interval=1)
+    live.capture(args, desktop)
+    factory.assert_not_called()
+    worker_factory.assert_called_once_with(client, view=None, overlay=desktop, aligner=None)
+    worker.close.assert_called_once()
 
 
 @pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])

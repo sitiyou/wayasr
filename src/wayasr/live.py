@@ -106,6 +106,7 @@ class AudioSegmenter:
 class SubtitleOutput:
     def __init__(self, view=None, overlay=None):
         self.view = view
+        self.dynamic_terminal = view is None and overlay is None
         self.views = tuple(sink for sink in (view, overlay) if sink is not None)
         self.previous = ""
         self.pending = ""
@@ -143,7 +144,7 @@ class SubtitleOutput:
             self.previous = text
             for view in self.views:
                 view.partial(self.pending + text[:stable], text[stable:])
-            if not self.view:
+            if self.dynamic_terminal:
                 sys.stdout.write("\r\033[K" + self.pending + text[:stable]
                                  + "\033[2m" + text[stable:] + "\033[0m")
         else:
@@ -155,7 +156,7 @@ class SubtitleOutput:
             separator = " " if self.pending and text and self.pending[-1].isascii() and text[0].isascii() else ""
             combined = self.pending + separator + text
             self.pending = ""
-            if not self.view:
+            if self.dynamic_terminal:
                 sys.stdout.write("\r\033[K")
             start = 0
             for match in SENTENCE_BOUNDARY.finditer(combined):
@@ -167,7 +168,7 @@ class SubtitleOutput:
             else:
                 for view in self.views:
                     view.partial(self.pending + tail)
-                if not self.view:
+                if self.dynamic_terminal:
                     sys.stdout.write(self.pending + tail)
         if not self.view:
             sys.stdout.flush()
@@ -180,7 +181,7 @@ class SubtitleOutput:
 
     def flush(self):
         if self.pending:
-            if not self.view:
+            if self.dynamic_terminal:
                 sys.stdout.write("\r\033[K")
             self.sentence(self.pending)
             self.pending = ""
@@ -349,7 +350,7 @@ def capture(args, overlay=None):
 
     vad = SileroVAD()
     view = None
-    if not args.plain and sys.stdout.isatty():
+    if overlay is None and not args.plain and sys.stdout.isatty():
         from .tui import ASRView
 
         view = ASRView(args.source, args.language, args.url)
