@@ -24,13 +24,13 @@ def setup_service(tmp_path, monkeypatch):
 def test_install_generates_absolute_paths_and_restarts(tmp_path, monkeypatch):
     run, models, unit = setup_service(tmp_path, monkeypatch)
     result = CliRunner().invoke(cli.main, ["service", "install", "--model-dir", str(models),
-                                          "--device", "ROCm0", "--clear-device-visibility"])
+                                          "--device", "ROCm0"])
     assert result.exit_code == 0, result.output
     content = unit.read_text()
     assert 'ExecStart="/usr/bin/llama-server"' in content
     assert str(models).replace("%", "%%").replace("$", "$$") in content
     assert '"--device" "ROCm0"' in content
-    assert "UnsetEnvironment=CUDA_VISIBLE_DEVICES" in content
+    assert "UnsetEnvironment" not in content
     assert "WorkingDirectory" not in content
     calls = [call.args[0] for call in run.call_args_list]
     assert calls == [["systemctl", "--user", "show-environment"],

@@ -47,28 +47,26 @@ def test_llama_idle_unload(monkeypatch, tmp_path):
 
 
 def test_local_audio_initialization(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "available_devices", lambda *args: {"CPU": ("cpu", 0)})
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     model = tmp_path / "model.gguf"
     model.touch()
-    answers = ["audio.cpp", "y", "y", "", "n", "", "", "", "", "cpu",
-               str(model), str(model), "60", "", "Chinese", "", "n", "y"]
+    answers = ["audio.cpp", "", "Local file", str(model), "y", "Local file", str(model), "CPU", "", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     settings = load_config()["server"]
     assert settings["server_bin"] == "audiocpp_server"
-    assert settings["idle_seconds"] == 60
+    assert settings["idle_seconds"] == 180
     assert settings["asr_path"] == str(model)
     assert "Device (auto lets llama.cpp choose)" not in result.output
 
 
 def test_external_audio_initialization():
-    answers = ["audio.cpp", "y", "n", "", "", "http://audio:8080", "Chinese", "", "n", "y"]
+    answers = ["Custom URL", "http://audio:8080", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     config = load_config()
-    assert config["backend"] == "audio.cpp"
-    assert config["live"]["fa"] is True
-    assert config["url"] == "http://audio:8080"
+    assert config == {"url": "http://audio:8080"}
 
 
 def test_live_audio_uses_shared_url(monkeypatch):

@@ -32,8 +32,6 @@ def render_unit(args):
         "TimeoutStopSec=20",
         "KillMode=control-group",
     ]
-    if args.clear_device_visibility:
-        lines.append("UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES ROCR_VISIBLE_DEVICES GPU_DEVICE_ORDINAL")
     return "\n".join(lines + ["", "[Install]", "WantedBy=default.target", ""])
 
 

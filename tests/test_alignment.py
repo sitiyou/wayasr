@@ -170,8 +170,8 @@ def test_aligned_final_uses_stable_text_without_retranscribing_audio():
     view.sentence.assert_called_once_with("第一句。")
 
 
-@pytest.mark.parametrize("options", [[], ["--language", "Chinese", "--partial-interval", "0"]])
-def test_aligner_requires_language_and_partial_recognition(options):
+@pytest.mark.parametrize("options", [["--partial-interval", "0"], ["--language", "Chinese", "--partial-interval", "0"]])
+def test_aligner_requires_partial_recognition(options):
     from click.testing import CliRunner
     from wayasr.cli import main
 
@@ -180,4 +180,4 @@ def test_aligner_requires_language_and_partial_recognition(options):
     save_config({"backend": "audio.cpp", "url": "http://audio", "live": {"fa": True}})
     result = CliRunner().invoke(main, ["live", *options])
     assert result.exit_code == 1
-    assert "forced alignment requires --language and a positive --partial-interval" in result.output
+    assert "Forced alignment requires a positive --partial-interval." in result.output

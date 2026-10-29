@@ -21,6 +21,8 @@ class LlamaASR:
         self.url = url.rstrip("/")
         self.language = language
         self.model = model
+        self.detected_language = None
+        self.detect_language = False
         self.timeout = timeout
         self.session = requests.Session()
 
@@ -34,13 +36,15 @@ class LlamaASR:
         if self.language:
             data["language"] = self.language
         response = self.session.post(
-            self.url + "/v1/audio/transcriptions",
+            self.url + ("/v1/audio/transcriptions/details" if self.detect_language else "/v1/audio/transcriptions"),
             files={"file": ("audio.wav", audio, "audio/wav")},
             data=data,
             timeout=self.timeout,
         )
         response.raise_for_status()
-        text = response.json()["text"]
+        result = response.json()
+        self.detected_language = result.get("language")
+        text = result["text"]
         return text.split("<asr_text>", 1)[-1].strip()
 
     def close(self):

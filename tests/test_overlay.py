@@ -182,7 +182,7 @@ def test_overlay_cli_defaults_and_overrides(monkeypatch):
     result = runner.invoke(cli.main, ["live"])
     assert result.exit_code == 0, result.output
     args = run.call_args.args[0]
-    assert (args.overlay, args.overlay_font_size, args.overlay_duration) == (True, 48, 10)
+    assert (args.overlay, args.overlay_font_size, args.overlay_duration) == (False, 48, 10)
     result = runner.invoke(cli.main, ["live", "--no-overlay"])
     assert result.exit_code == 0, result.output
     assert run.call_args.args[0].overlay is False

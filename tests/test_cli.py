@@ -52,7 +52,7 @@ def test_server_cpu_and_visibility_are_scoped_to_child(tmp_path, monkeypatch):
     assert popen.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "1"
     args.clear_device_visibility = True
     serve(args)
-    assert "CUDA_VISIBLE_DEVICES" not in popen.call_args.kwargs["env"]
+    assert popen.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "1"
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "1"
 
 

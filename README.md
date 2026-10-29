@@ -85,7 +85,7 @@ wayasr serve --model-dir ./models --device Vulkan0
 wayasr serve --model-dir ./models --device none --flash-attn off
 ```
 
-默认尊重当前 `CUDA_VISIBLE_DEVICES`、`HIP_VISIBLE_DEVICES` 等限制。如果明确需要忽略这些限制，添加 `--clear-device-visibility`；仅对服务子进程生效，不修改当前 shell。清除限制后设备编号可能改变，请重新确认。
+服务尊重当前 `CUDA_VISIBLE_DEVICES`、`HIP_VISIBLE_DEVICES` 等限制，不修改 GPU 可见性。
 
 其他常用选项：
 
@@ -174,15 +174,17 @@ wayasr live --overlay --overlay-font-size 48 --overlay-duration 10
 
 桌面字幕与终端输出同时保留；`--plain` 只禁用 Rich TUI，不禁用桌面字幕。Ctrl+C 结束采集、处理待完成转写，并关闭叠加层。该基础集成不提供托盘、菜单或拖拽操作，默认鼠标穿透；合成器规则可按 layer-shell namespace `wayasr` 匹配，与 layrics 的显示层独立。
 
-`config init` 可以保存是否启用桌面字幕；`--no-overlay` 临时覆盖已保存的启用状态。也可以在配置文件的 `live` 对象中设置 `overlay`、`overlay_font_size` 和 `overlay_duration`。桌面显示并未扩展采集平台范围，音频仍通过 PulseAudio/PipeWire-Pulse 的 `parec` 获取。
+桌面字幕默认关闭，使用 `--overlay` 开启；不在初始化中配置。桌面显示并未扩展采集平台范围，音频仍通过 PulseAudio/PipeWire-Pulse 的 `parec` 获取。
 
 如果没有显示，请确认服务已就绪、音源有声音、`WAYLAND_DISPLAY` 有效、合成器支持 layer-shell，以及 Vulkan 驱动可用；查看终端中的 asslayer 日志。
 
 ### 可选 GGUF 强制对齐（实验）
 
-`wayasr config init` 可选择 llama.cpp 或 [audio.cpp](https://github.com/0xShug0/audio.cpp)。llama.cpp 使用原有的标点/VAD 分段；audio.cpp 在同一个服务中运行 ASR 和可选的 Qwen3-ForcedAligner。初始化默认启用 FA，也可关闭；不支持混合两个后端。运行命令只需 `--url`，后端、模型 ID 和 FA 开关均保存在配置文件中。
+`wayasr config init` 可选择 llama.cpp 或 [audio.cpp](https://github.com/0xShug0/audio.cpp)。llama.cpp 使用原有的标点/VAD 分段；audio.cpp 在同一个服务中运行 ASR 和可选的 Qwen3-ForcedAligner。初始化默认启用 FA，也可关闭；不支持混合两个后端。运行时自动读取服务 URL 和 FA 开关，模型 ID 由程序管理。
 
-安装支持 `qwen3_forced_aligner` 的 `audiocpp_server`，并下载 **audio.cpp 原生格式**的 GGUF；llama.cpp 的 GGUF 不保证兼容。下载默认复用 Hugging Face 缓存，不必复制到项目的 `models/`：
+安装支持 `qwen3_forced_aligner` 的 `audiocpp_server`。ASR 和 FA 模型通过菜单选择预设模型或本地模型，首次启动服务会从 `audio-cpp/audio.cpp-gguf` 自动下载默认的 Qwen3-ASR-1.7B Q8_0，以及启用 FA 时的 Qwen3-ForcedAligner-0.6B Q8_0，复用 Hugging Face 缓存；后续启动无需重复下载。可通过 `HF_ENDPOINT` 设置镜像。`config init` 仅保存配置，不下载模型。
+
+也可预先下载 **audio.cpp 原生格式**的 GGUF，并在初始化时填写本地绝对路径；llama.cpp 的 GGUF 不保证兼容。例如手动下载 FA 模型：
 
 ```bash
 HF_ENDPOINT=https://hf-mirror.com uvx --from huggingface-hub hf download \
@@ -190,7 +192,7 @@ HF_ENDPOINT=https://hf-mirror.com uvx --from huggingface-hub hf download \
   Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf
 ```
 
-初始化本地 audio.cpp 服务时填写 ASR 和 FA 模型路径，工具会生成服务配置。连接外部服务时，由用户配置两个模型，例如：
+初始化本地 audio.cpp 服务时，ASR 默认选择 `Qwen3-ASR-1.7B Q8_0`，FA 默认选择 `Qwen3-ForcedAligner-0.6B Q8_0`，无需填写仓库 ID 或文件名。选择 `Local file` 后填写已有模型文件的绝对路径，即可使用自定义模型，不触发下载。工具会在启动时生成服务配置。连接外部服务时，由用户配置两个模型，例如：
 
 ```json
 {
@@ -218,18 +220,18 @@ HF_ENDPOINT=https://hf-mirror.com uvx --from huggingface-hub hf download \
 }
 ```
 
-外部服务启动后，初始化选择 audio.cpp 并填写同一 URL；本地服务可用 `wayasr serve` 或 `wayasr service install` 管理：
+外部服务启动后，初始化选择 `Custom URL`，填写服务根地址，仅使用转录功能；本地 audio.cpp 服务支持自动对齐，可用 `wayasr serve` 或 `wayasr service install` 管理：
 
 ```bash
 audiocpp_server --config server.json --no-ui
 wayasr live --language Chinese --url http://127.0.0.1:8087
 ```
 
-配置中的 `server.asr_model` 和 `server.aligner_model` 默认分别为 `qwen3-asr` 和 `qwen3-align`，不是模型文件路径。`live.fa` 控制是否启用对齐。对齐需要明确的 `--language`，且 `--partial-interval` 必须大于 0。服务可按 audio.cpp 的支持情况改用 GPU；WayASR 不修改 GPU 可见性环境变量。
+ASR 和 FA 的内部 ID 分别为 `qwen3-asr` 和 `qwen3-align`，无需填写。`live.fa` 控制是否启用对齐。语言默认由 ASR 检测后传给 FA，也可用 `--language` 覆盖；需要支持 `/v1/audio/transcriptions/details` 的 audio.cpp 版本。启用对齐时 `--partial-interval` 必须大于 0。设备从当前环境可见的列表中选择，WayASR 不修改 GPU 可见性环境变量。
 
 同一段连续两次识别的公共前缀包含完整句子、且音频窗口累计约 5 秒后，才尝试对齐；同一候选句子不会随每次 partial 重复对齐。只提交时间戳确认的前缀及其已稳定文本，保留约 512 ms 音频上下文和边界之后的全部音频。时间戳异常、文本不匹配、超时或服务不可用时，会明确报告错误，不静默回退到标点切分；正常的静音分段和最大段长仍生效。
 
-本地服务初始化可设置 `server.idle_seconds`，默认 `0` 关闭闲置卸载。llama.cpp 使用 `--sleep-idle-seconds`，audio.cpp 使用 `idle_unload_ms`；再次请求自动加载，但首个请求会增加加载延迟。外部服务需自行设置。需要支持相应功能的服务版本。
+本地服务默认闲置 180 秒后卸载模型，初始化不再询问。可手动修改 `server.idle_seconds`，`0` 表示禁用。llama.cpp 使用 `--sleep-idle-seconds`，audio.cpp 使用 `idle_unload_ms`；再次请求自动加载，但首个请求会增加加载延迟。外部服务需自行设置。需要支持相应功能的服务版本。
 
 对齐会增加额外推理成本，且不能纠正错误转写。首次请求还包含模型加载时间；是否改善实际延迟，需要用自己的音频测量。
 
@@ -251,7 +253,7 @@ wayasr config init
 wayasr config show
 ```
 
-`config init` 首先询问是否配置本地 llama.cpp 服务。选择否即可接入已有 API，只需设置客户端 URL、识别语言、采集源和是否启用 Wayland 桌面字幕，无需安装 llama.cpp 或下载模型；已有本地服务配置会保留。选择是时，还会询问 `llama-server` 路径、模型目录、设备、GPU 可见性限制、监听地址和端口，最后确认保存。已有配置作为初始值；取消不会覆盖文件。初始化仅保存配置，不下载模型、不安装或重启服务。可以将模型目录设置为前面下载文件使用的 `./models`，保存时转换为绝对路径。
+`config init` 首先选择 `llama.cpp`、`audio.cpp` 或 `Custom URL`。本地服务只配置程序、模型、设备和端口，固定监听本机，自动保存唯一的服务 URL；audio.cpp 还可选择是否启用 FA。`Custom URL` 只填写已有服务的根地址，无需本地程序或模型。语言默认自动检测，音源默认使用系统监听源，桌面字幕默认关闭，均在运行时通过 CLI 覆盖，不持久化。重新初始化会清理旧字段及不适用的服务设置；取消不会覆盖文件。初始化不下载模型、不安装或重启服务。模型目录保存为绝对路径。
 
 已有 API 的 URL 应填写服务根地址（例如 `https://asr.example.com`），不要包含 `/v1/audio/transcriptions`；客户端会自动追加该路径。服务须兼容当前客户端的 WAV multipart 上传及 JSON `text` 响应；目前不提供 API Key 或自定义模型参数配置。
 
@@ -269,7 +271,7 @@ macOS、Windows 使用平台标准用户目录；`config show` 显示实际配�
 | `WAYASR_URL` | 文件及实时转写的服务地址 | `http://127.0.0.1:8087` |
 | `WAYASR_MODEL_DIR` | 服务模型目录 | 平台用户数据目录下的 `wayasr/models` |
 
-`service install` 成功启动服务后，保存实际安装参数和客户端 URL；后续安装复用这些参数，`transcribe` 和 `live` 自动使用保存的端口。监听 `0.0.0.0` 时，客户端连接 `127.0.0.1`；监听 `::` 时连接 `[::1]`。如需保留 GPU 可见性限制，可用 `--keep-device-visibility` 覆盖此前保存的清除选项。
+`service install` 成功启动服务后，保存实际安装参数和服务 URL；后续安装复用这些参数，`transcribe` 和 `live` 自动使用保存的端口。监听 `0.0.0.0` 时，客户端连接 `127.0.0.1`；监听 `::` 时连接 `[::1]`。
 
 配置文件损坏时会明确报错，不会静默使用错误的服务地址。已有 systemd drop-in 若修改实际监听地址或端口，仍需同步配置；安装器保存的是自身安装参数，不解析外部覆盖项。
 
@@ -289,11 +291,11 @@ wayasr service install
 该命令校验模型和 `llama-server`，将绝对路径写入 `~/.config/systemd/user/wayasr.service`（尊重 `XDG_CONFIG_HOME`），自动重新加载 systemd、启用登录自启动并启动服务。重复执行会更新配置并重启服务。使用与 `serve` 相同的参数配置设备、端口和模型，例如：
 
 ```sh
-wayasr service install --model-dir ./models --device ROCm0 --clear-device-visibility
+wayasr service install --model-dir ./models --device ROCm0
 wayasr service install --model-dir ./models --device none --flash-attn off
 ```
 
-服务直接运行安装时解析到的 `llama-server`，不依赖安装目录或虚拟环境路径，但模型和可执行文件移动后需要重新执行安装命令。服务继承 systemd 用户管理器的环境，而不是安装命令所在 shell 的全部环境；`--clear-device-visibility` 会在 unit 中明确清除 GPU 可见性限制。已有自定义 drop-in 保留且仍可能覆盖安装参数。
+服务直接运行安装时解析到的 `llama-server`，不依赖安装目录或虚拟环境路径，但模型和可执行文件移动后需要重新执行安装命令。服务继承 systemd 用户管理器的环境，而不是安装命令所在 shell 的全部环境，不主动清除 GPU 可见性限制。已有自定义 drop-in 保留且仍可能覆盖安装参数。
 
 ```sh
 systemctl --user status wayasr.service

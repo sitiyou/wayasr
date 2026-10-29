@@ -226,6 +226,8 @@ class TranscriptionWorker:
         if self.aligner is not None and self.alignment_attempt != (segment, prefix):
             self.alignment_attempt = (segment, prefix)
             try:
+                if not self.client.language:
+                    self.aligner.language = self.client.detected_language
                 cut = AlignedCut(self.aligner.cut(audio, text, prefix), prefix)
             except Exception as error:
                 message = f"Forced alignment failed: {error}"
@@ -305,8 +307,8 @@ class TranscriptionWorker:
 def run(args):
     if args.partial_interval < 0 or not 1 <= args.max_segment <= 25:
         raise ValueError("partial interval must be nonnegative; max segment must be 1–25 seconds")
-    if getattr(args, "aligner_url", None) and (not args.language or not args.partial_interval):
-        raise ValueError("forced alignment requires --language and a positive --partial-interval")
+    if getattr(args, "aligner_url", None) and not args.partial_interval:
+        raise ValueError("Forced alignment requires a positive --partial-interval.")
     if not shutil.which("parec"):
         raise ValueError("live capture requires parec (Linux PulseAudio or PipeWire-Pulse)")
 
@@ -333,6 +335,7 @@ def capture(args, overlay=None):
         view = ASRView(args.source, args.language, args.url)
     client = LlamaASR(args.url, args.language, args.timeout)
     client.model = getattr(args, "asr_model", None)
+    client.detect_language = bool(getattr(args, "aligner_url", None) and not args.language)
     aligner = None
     if getattr(args, "aligner_url", None):
         from .alignment import ForcedAligner

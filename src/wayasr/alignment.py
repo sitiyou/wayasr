@@ -44,6 +44,8 @@ class ForcedAligner:
         self.session = requests.Session()
 
     def cut(self, audio, text, prefix):
+        if not self.language:
+            raise ValueError("ASR did not return a detected language.")
         response = self.session.post(
             self.url + "/v1/audio/alignments",
             files={"file": ("audio.wav", encode_wav(audio), "audio/wav")},

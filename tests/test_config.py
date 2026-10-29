@@ -19,7 +19,7 @@ def test_client_default_precedence(monkeypatch):
     runner = CliRunner()
     assert runner.invoke(cli.main, ["live"]).exit_code == 0
     assert captured[-1].url == "http://localhost:9000"
-    assert captured[-1].language == "Chinese"
+    assert captured[-1].language is None
     monkeypatch.setenv("WAYASR_URL", "http://localhost:9001")
     assert runner.invoke(cli.main, ["live"]).exit_code == 0
     assert captured[-1].url == "http://localhost:9001"
@@ -39,7 +39,7 @@ def test_client_default_precedence(monkeypatch):
     monkeypatch.delenv("WAYASR_URL")
     result = runner.invoke(cli.main, ["transcribe", str(audio)])
     assert result.exit_code == 0, result.output
-    factory.assert_called_once_with("http://localhost:9000", "Chinese", 120)
+    factory.assert_called_once_with("http://localhost:9000", None, 120)
 
 
 def test_saved_server_defaults_and_explicit_override(monkeypatch):
@@ -49,17 +49,18 @@ def test_saved_server_defaults_and_explicit_override(monkeypatch):
     runner = CliRunner()
     assert runner.invoke(cli.main, ["serve"]).exit_code == 0
     assert captured[-1].port == 9000
-    assert captured[-1].clear_device_visibility is True
-    result = runner.invoke(cli.main, ["serve", "--port", "9001", "--keep-device-visibility"])
+    assert not hasattr(captured[-1], "clear_device_visibility")
+    result = runner.invoke(cli.main, ["serve", "--port", "9001"])
     assert result.exit_code == 0, result.output
     assert captured[-1].port == 9001
-    assert captured[-1].clear_device_visibility is False
+    assert not hasattr(captured[-1], "clear_device_visibility")
 
 
 def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda binary: None)
     models = tmp_path / "model directory"
-    answers = ["llama.cpp", "y", "llama-server", str(models), "none", "n", "0.0.0.0", "9000", "0", "", "Chinese", "@DEFAULT_SOURCE@", "y", "y"]
+    monkeypatch.setattr(cli, "available_devices", lambda *args: {"CPU": "none"})
+    answers = ["llama.cpp", "llama-server", str(models), "CPU", "9000", "y"]
     runner = CliRunner()
     result = runner.invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
@@ -68,9 +69,9 @@ def test_interactive_initialization_and_show(monkeypatch, tmp_path):
     assert saved["server"]["port"] == 9000
     assert saved["server"]["model_dir"] == str(models)
     assert saved["server"]["server_bin"] == "llama-server"
-    assert saved["client"]["language"] == "Chinese"
-    assert saved["live"]["source"] == "@DEFAULT_SOURCE@"
-    assert saved["live"]["overlay"] is True
+    assert "client" not in saved
+    assert "live" not in saved
+    assert saved["server"]["idle_seconds"] == 180
     assert not (config.config_home() / "systemd/user/wayasr.service").exists()
     shown = runner.invoke(cli.main, ["config", "show"])
     assert shown.exit_code == 0
@@ -83,15 +84,15 @@ def test_init_existing_api_skips_server_setup(monkeypatch, existing):
     if existing:
         config.save_config(existing)
     monkeypatch.setattr(cli.shutil, "which", Mock(side_effect=AssertionError("Must not resolve a local server")))
-    answers = (["y"] if existing else []) + ["llama.cpp", "n", "https://asr.example.test", "auto", "", "n", "y"]
+    answers = (["y"] if existing else []) + ["Custom URL", "https://asr.example.test", "y"]
     result = CliRunner().invoke(cli.main, ["config", "init"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     saved = config.load_config()
     assert saved["url"] == "https://asr.example.test"
-    assert saved["server"] == {**existing.get("server", {}), "backend": "llama.cpp"}
+    assert saved == {"url": "https://asr.example.test"}
     assert "Model directory" not in result.output
     assert "service install" not in result.output
-    assert "configured API" in result.output
+    assert "Ready to transcribe" in result.output
 
 
 def test_init_abort_keeps_previous_config():
@@ -105,17 +106,17 @@ def test_init_abort_keeps_previous_config():
 def test_reinitialization_preserves_remote_url_and_can_cancel():
     config.save_config({"url": "https://remote.example.test:9000"})
     runner = CliRunner()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nllama.cpp\nn\n" + "\n" * 5)
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nCustom URL\n\ny\n")
     assert result.exit_code == 0, result.output
     assert config.load_config()["url"] == "https://remote.example.test:9000"
     before = config.config_path().read_bytes()
-    result = runner.invoke(cli.main, ["config", "init"], input="y\nllama.cpp\nn\n" + "\n" * 4 + "n\n")
+    result = runner.invoke(cli.main, ["config", "init"], input="y\nCustom URL\n\nn\n")
     assert result.exit_code != 0
     assert config.config_path().read_bytes() == before
 
 
 def test_init_cancel_does_not_save():
-    result = CliRunner().invoke(cli.main, ["config", "init"], input="\n" * 11 + "n\n")
+    result = CliRunner().invoke(cli.main, ["config", "init"], input="Custom URL\nhttp://remote\nn\n")
     assert result.exit_code != 0
     assert not config.config_path().exists()
 
