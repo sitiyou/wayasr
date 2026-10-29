@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from typing import NamedTuple
 
 from .client import create_client
@@ -110,16 +111,28 @@ class SubtitleOutput:
         self.pending = ""
         self.last_final = ""
 
-    def update(self, text, final=False, overlap=0, end=True):
+    def update(self, text, final=False, overlap=0, end=True, preserve_tail=False):
         if overlap:
-            limit = min(len(text), len(self.last_final), max(1, int(overlap * 0.032 * 24)))
-            for size in range(limit, 3, -1):
-                prefix = text[:size]
-                if (self.last_final.endswith(prefix)
-                        and len(set(prefix.strip())) >= 3
-                        and (not prefix[-1].isascii() or prefix[-1].isspace()
-                             or not prefix[-1].isalnum())):
-                    text = text[size:].lstrip()
+            current = [(index, char) for index, char in enumerate(text)
+                       if not char.isspace() and not unicodedata.category(char).startswith("P")]
+            previous = [(index, char) for index, char in enumerate(self.last_final)
+                        if not char.isspace() and not unicodedata.category(char).startswith("P")]
+            current_text = "".join(char for _, char in current)
+            previous_text = "".join(char for _, char in previous)
+            limit = min(len(current), len(previous), max(1, int(overlap * 0.032 * 24)))
+            for size in range(limit, 2, -1):
+                prefix = current_text[:size]
+                start = previous[-size][0]
+                prefix_end = current[size - 1][0] + 1
+                if (previous_text.endswith(prefix)
+                        and len(set(prefix)) >= 3
+                        and not (prefix[-1].isascii() and prefix[-1].isalnum()
+                                 and prefix_end < len(text)
+                                 and text[prefix_end].isascii() and text[prefix_end].isalnum())
+                        and not (prefix[0].isascii() and prefix[0].isalnum()
+                                 and start > 0 and self.last_final[start - 1].isascii()
+                                 and self.last_final[start - 1].isalnum())):
+                    text = text[current[size][0]:] if size < len(current) else ""
                     break
         if not final:
             stable = 0
@@ -134,6 +147,9 @@ class SubtitleOutput:
                 sys.stdout.write("\r\033[K" + self.pending + text[:stable]
                                  + "\033[2m" + text[stable:] + "\033[0m")
         else:
+            tail = ""
+            if preserve_tail and not end and self.previous.startswith(text):
+                tail = self.previous[len(text):].lstrip()
             self.previous = ""
             self.last_final = text
             separator = " " if self.pending and text and self.pending[-1].isascii() and text[0].isascii() else ""
@@ -150,9 +166,12 @@ class SubtitleOutput:
                 self.flush()
             else:
                 for view in self.views:
-                    view.partial(self.pending)
+                    if tail:
+                        view.partial(self.pending, tail)
+                    else:
+                        view.partial(self.pending)
                 if not self.view:
-                    sys.stdout.write(self.pending)
+                    sys.stdout.write(self.pending + ("\033[2m" + tail + "\033[0m" if tail else ""))
         if not self.view:
             sys.stdout.flush()
 
@@ -266,7 +285,8 @@ class TranscriptionWorker:
                     with self.condition:
                         stale = segment != self.segment or segment <= self.finalized_segment or self.closed
                         if final or not stale:
-                            self.output.update(text, final, overlap, end)
+                            self.output.update(text, final, overlap, end,
+                                               preserve_tail=final and final_text is not None)
                             previous = self.previous_partial
                             self.previous_partial = None if final else (segment, text)
                     if not final and not stale and can_commit:

@@ -189,6 +189,79 @@ def test_overlap_dedup_is_bounded_and_only_for_overlapped_audio(capsys):
     assert "春夏秋冬" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("previous,current,expected", [
+    ("这个PCU是根据一定的系数换算出来的。", "算出来的，这里有个PCU的换算系数。", "这里有个PCU的换算系数。"),
+    ("不超过一千三百五十辆呢。", "五十辆呢，这条路的通行效率就视为能够满足。", "这条路的通行效率就视为能够满足。"),
+    ("通过二十辆以上的情况。", "样的情况，所以说在一环这个地图中呢。", "样的情况，所以说在一环这个地图中呢。"),
+    ("采访的是工作室的一位高管。", "位高管，这个文章的标题是。", "这个文章的标题是。"),
+    ("追加大量建筑制作。", "建筑制作文章中提到了。", "文章中提到了。"),
+    ("前面说春夏秋冬。", "春夏，秋冬，然后继续。", "然后继续。"),
+    ("a thing.", "thingamajig", "thingamajig"),
+    ("something.", "thing next", "thing next"),
+    ("hello world.", "world, next", "next"),
+])
+def test_overlap_dedup_ignores_punctuation_without_splitting_words(previous, current, expected):
+    view = Mock()
+    output = SubtitleOutput(view)
+    output.update(previous, final=True)
+    view.reset_mock()
+    output.update(current, final=True, overlap=16)
+    assert "".join(call.args[0] for call in view.sentence.call_args_list) == expected
+
+
+def test_overlap_dedup_is_applied_to_partial_and_final():
+    view = Mock()
+    output = SubtitleOutput(view)
+    output.update("采访了一位高管。", final=True)
+    view.reset_mock()
+    output.update("位高管，文章的标题", overlap=16)
+    assert view.partial.call_args.args == ("", "文章的标题")
+    output.update("位高管，文章的标题。", final=True, overlap=16)
+    view.sentence.assert_called_once_with("文章的标题。")
+
+
+def test_aligned_sentence_preserves_unconfirmed_tail_until_next_recognition():
+    view, overlay = Mock(), Mock()
+    output = SubtitleOutput(view, overlay)
+    output.update("第一句。第二句还在说")
+    output.update("第一句。", final=True, end=False, preserve_tail=True)
+    for sink in (view, overlay):
+        sink.sentence.assert_called_once_with("第一句。")
+        sink.partial.assert_called_with("", "第二句还在说")
+    assert output.pending == ""
+    output.update("第二句换了说法")
+    view.partial.assert_called_with("", "第二句换了说法")
+    output.update("第二句说完了。", final=True)
+    assert [call.args[0] for call in view.sentence.call_args_list] == ["第一句。", "第二句说完了。"]
+    view.partial.assert_called_with("")
+
+
+@pytest.mark.parametrize("end,preserve_tail,final_text", [
+    (True, True, "第一句。"),
+    (False, False, "第一句。"),
+    (False, True, "另一句。"),
+])
+def test_unconfirmed_tail_is_not_kept_for_finished_or_mismatched_text(end, preserve_tail, final_text):
+    view = Mock()
+    output = SubtitleOutput(view)
+    output.update("第一句。后面的临时内容")
+    view.reset_mock()
+    output.update(final_text, final=True, end=end, preserve_tail=preserve_tail)
+    view.partial.assert_called_with("")
+    assert output.pending == ""
+
+
+def test_aligned_tail_survives_overlap_deduplication():
+    view = Mock()
+    output = SubtitleOutput(view)
+    output.update("前面的建筑制作。", final=True)
+    output.update("建筑制作文章提到了。后文还在说", overlap=16)
+    output.update("建筑制作文章提到了。", final=True, end=False,
+                  overlap=16, preserve_tail=True)
+    view.sentence.assert_called_with("文章提到了。")
+    view.partial.assert_called_with("", "后文还在说")
+
+
 def test_inflight_partial_is_not_displayed_after_finalization(capsys):
     entered = threading.Event()
     release = threading.Event()
