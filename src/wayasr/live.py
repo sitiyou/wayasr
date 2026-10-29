@@ -1,5 +1,6 @@
 import shutil
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 import queue
 import re
 import subprocess
@@ -9,6 +10,7 @@ import time
 from typing import NamedTuple
 
 from .client import create_client
+from .diagnostics import log_alignment_failure
 
 
 SENTENCE_BOUNDARY = re.compile(r"[。！？]+[”’\"]*|(?<!\d)[.!?]+[\"']*(?=\s|$)")
@@ -177,6 +179,8 @@ class TranscriptionWorker:
         self.client = client
         self.aligner = aligner
         self.alignment_attempt = None
+        self.alignment_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="forced-alignment") if aligner is not None else None
+        self.alignment_future = None
         self.finals = queue.Queue(maxsize=max_pending)
         self.partial = None
         self.cuts = queue.SimpleQueue()
@@ -230,11 +234,7 @@ class TranscriptionWorker:
                     self.aligner.language = self.client.detected_language
                 cut = AlignedCut(self.aligner.cut(audio, text, prefix), prefix)
             except Exception as error:
-                message = f"Forced alignment failed: {error}"
-                if self.view:
-                    self.view.show_error(message)
-                else:
-                    print(message, file=sys.stderr)
+                log_alignment_failure(error)
         if self.aligner is None and cut is None and previous[1] == text and len(prefix) == len(text):
             cut = len(audio) // 1024
         if cut is not None:
@@ -270,7 +270,12 @@ class TranscriptionWorker:
                             previous = self.previous_partial
                             self.previous_partial = None if final else (segment, text)
                     if not final and not stale and can_commit:
-                        self.request_cut(audio, text, segment, previous)
+                        if self.alignment_executor is None:
+                            self.request_cut(audio, text, segment, previous)
+                        elif self.alignment_future is None or self.alignment_future.done():
+                            self.alignment_future = self.alignment_executor.submit(
+                                self.request_cut, audio, text, segment, previous
+                            )
                     if final and final_text is None:
                         duration = len(audio) / 32000
                         elapsed = time.perf_counter() - started
@@ -293,6 +298,8 @@ class TranscriptionWorker:
                 try:
                     self.client.close()
                 finally:
+                    if self.alignment_executor is not None:
+                        self.alignment_executor.shutdown(wait=True)
                     if self.aligner is not None:
                         self.aligner.close()
 

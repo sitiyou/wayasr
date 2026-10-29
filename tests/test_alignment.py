@@ -32,7 +32,6 @@ def test_character_alignment_maps_chinese_sentence_to_audio_time():
     (spans(("hellonext", 0, 1)), "hello.next", "hello.", 2),
     (spans(("hello", -1, 1)), "hello.", "hello.", 2),
     (spans(("hello", 1, 0.5)), "hello.", "hello.", 2),
-    (spans(("hello", 0, 3)), "hello.", "hello.", 2),
     (spans(("hello", 0, math.nan)), "hello.", "hello.", 2),
     (spans(("hello", 0, math.inf)), "hello.", "hello.", 2),
     (spans(("hello", 0, 0)), "hello.", "hello.", 2),
@@ -43,6 +42,36 @@ def test_character_alignment_maps_chinese_sentence_to_audio_time():
 def test_invalid_alignment_is_rejected(items, text, prefix, duration):
     with pytest.raises(ValueError):
         aligned_cut(items, text, prefix, duration)
+
+
+@pytest.mark.parametrize("end", [2.001, 2.032, 3, 100])
+def test_alignment_clamps_boundary_to_complete_audio_frames(end):
+    assert aligned_cut(spans(("hello", 0, end)), "hello.", "hello.", 2) == 62
+
+
+@pytest.mark.parametrize("chunks,end", [(329, 10.56), (392, 12.56)])
+def test_aligner_accepts_boundary_beyond_audio_end(monkeypatch, chunks, end):
+    session = Mock()
+    session.post.return_value.json.return_value = {
+        "words": [{"word": "hello", "start": 0, "end": end}]
+    }
+    monkeypatch.setattr(alignment.requests, "Session", lambda: session)
+    client = ForcedAligner("http://aligner", "model", "English")
+    try:
+        assert client.cut(b"aa" * 512 * chunks, "hello.", "hello.") == chunks
+    finally:
+        client.close()
+
+
+def test_out_of_range_tail_does_not_change_earlier_sentence_boundary():
+    items = spans(("hello", 0, 0.5), ("next", 1, 3), ("tail", 4, 5))
+    assert aligned_cut(items, "hello. next tail", "hello.", 2) == 16
+
+
+def test_clamping_does_not_hide_invalid_timestamp_order():
+    items = spans(("hello", 0, 4), ("next", 3, 3.5))
+    with pytest.raises(ValueError, match="Invalid alignment timestamps"):
+        aligned_cut(items, "hello. next", "hello.", 2)
 
 
 def test_aligner_uploads_full_snapshot_and_maps_sentence_boundary(monkeypatch):
@@ -105,7 +134,9 @@ def test_aligned_cut_cannot_retain_more_context_than_committed_audio():
     assert len(segmenter.frames) == 170
 
 
-def test_failed_alignment_does_not_fall_back():
+def test_failed_alignment_does_not_fall_back(monkeypatch):
+    log_failure = Mock()
+    monkeypatch.setattr("wayasr.live.log_alignment_failure", log_failure)
     aligner = Mock()
     aligner.cut.side_effect = ValueError("invalid timestamps")
     worker = TranscriptionWorker(Mock(), view=Mock(), aligner=aligner)
@@ -118,7 +149,8 @@ def test_failed_alignment_does_not_fall_back():
         assert worker.take_cut(0) is None
         worker.request_cut(audio, "第一句。", 0, (0, "第一句。"))
         assert worker.take_cut(0) is None
-        assert "Forced alignment failed:" in worker.view.show_error.call_args.args[0]
+        worker.view.show_error.assert_not_called()
+        log_failure.assert_called_once_with(aligner.cut.side_effect)
     finally:
         worker.close()
     aligner.close.assert_called_once()
@@ -159,6 +191,40 @@ def test_inflight_alignment_cannot_cut_a_finalized_segment():
         release.set()
         worker.close()
     assert worker.take_cut(0) is None
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_slow_alignment_does_not_block_transcription_or_finalization(fails, monkeypatch):
+    monkeypatch.setattr("wayasr.live.log_alignment_failure", Mock())
+    entered, release, finalized = threading.Event(), threading.Event(), threading.Event()
+    aligner = Mock()
+
+    def cut(*args):
+        entered.set()
+        assert release.wait(5)
+        if fails:
+            raise ValueError("Invalid alignment timestamps")
+        return 60
+
+    aligner.cut.side_effect = cut
+    client, view = Mock(), Mock()
+    client.transcribe.return_value = "第一句。后文"
+    view.sentence.side_effect = lambda text: finalized.set()
+    worker = TranscriptionWorker(client, view=view, aligner=aligner)
+    audio = b"aa" * 512 * 170
+    try:
+        worker.previous_partial = (0, "第一句。")
+        worker.submit(audio, 0, can_commit=True)
+        assert entered.wait(5)
+        worker.submit(audio, 0, final=True)
+        assert finalized.wait(5)
+        assert client.transcribe.call_count == 2
+        assert not release.is_set()
+    finally:
+        release.set()
+        worker.close()
+    assert worker.take_cut(0) is None
+    aligner.close.assert_called_once()
 
 
 def test_aligned_final_uses_stable_text_without_retranscribing_audio():

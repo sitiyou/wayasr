@@ -17,22 +17,26 @@ def aligned_cut(items, text, prefix, duration):
     aligned = ""
     boundary = None
     previous_start = previous_end = 0.0
-    for item in items:
+    for index, item in enumerate(items):
         start, end = float(item.start_time), float(item.end_time)
         if (not math.isfinite(start) or not math.isfinite(end)
-                or not previous_start <= start <= end <= duration
+                or not previous_start <= start <= end
                 or end < previous_end):
-            raise ValueError("Invalid alignment timestamps")
+            raise ValueError(
+                f"Invalid alignment timestamps: word[{index}]={item.text!r}, "
+                f"start={start!r}, end={end!r}, audio_duration={duration!r}, "
+                f"previous_start={previous_start!r}, previous_end={previous_end!r}"
+            )
         token = normalized_text(item.text)
         if not token:
             raise ValueError("Empty alignment token")
         aligned += token
         if aligned == target:
-            boundary = end
+            boundary = min(end, duration)
         previous_start, previous_end = start, end
     if aligned != normalized_text(text) or boundary is None or boundary <= 0:
         raise ValueError("Alignment does not match the transcript boundary")
-    return math.ceil(boundary / 0.032)
+    return min(math.ceil(boundary / 0.032), math.floor(duration / 0.032))
 
 
 class ForcedAligner:
